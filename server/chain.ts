@@ -51,7 +51,7 @@ type MachineSpec = {
 };
 
 const SPECS: MachineSpec[] = [
-  { actor: "treasury", name: "Rheinau treasury", machineType: "Rheinau-treasury", keyLabel: null },
+  { actor: "treasury", name: "Plant treasury", machineType: "Rheinau-treasury", keyLabel: null },
   { actor: "robot", name: "Kepler", machineType: "Kepler-01", keyLabel: "Kepler-01" },
   { actor: "drone", name: "Lumen", machineType: "Lumen-04", keyLabel: "Lumen-04" },
   { actor: "battery", name: "Battery", machineType: "BESS-2", keyLabel: "BESS-2" },
@@ -182,6 +182,7 @@ export async function startYard(): Promise<void> {
   }
 
   operator = privateKeyToAccount(key);
+  // Derivation labels predate the project name; changing them changes every derived address.
   people = {
     city: privateKeyToAccount(childKey(key, "Rheinau-city")),
     plantOwner: privateKeyToAccount(childKey(key, "Rheinau-plant-owner")),

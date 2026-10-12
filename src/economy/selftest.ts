@@ -39,7 +39,7 @@ assert(
   "MachineRegistry drifted from the peaq SDK",
 );
 assert(EVENT_TYPE_ACTIVITY === BROWSER_EVENT && TRUST_SELF_REPORTED === BROWSER_TRUST, "event constants drifted");
-const lockPayload = new TextEncoder().encode("rheinau-sdk-lock");
+const lockPayload = new TextEncoder().encode("fuel-the-robot-economy-sdk-lock");
 assert(computeDataHash(lockPayload) === browserHash(lockPayload), "browser hash is not computeDataHash");
 
 function runUntil(engine: Engine, cycle: number): void {

@@ -88,5 +88,5 @@ for (const row of REPLAY_RUN) {
   }
 }
 
-console.log(failures === 0 ? "\nAll Rheinau machine IDs and receipts check out on Agung." : `\n${failures} check(s) failed.`);
+console.log(failures === 0 ? "\nAll Fuel the Robot Economy machine IDs and receipts check out on Agung." : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

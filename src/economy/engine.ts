@@ -434,7 +434,7 @@ export class Engine {
       } else {
         this.log(
           "info",
-          "Rheinau runs three compressed days. The Drain funds the run, the city buys the power, the plant pays the robot owner, and the rover recharges.",
+          "The yard runs three compressed days. The Drain funds the run, the city buys the power, the plant pays the robot owner, and the rover recharges.",
         );
       }
       this.log(

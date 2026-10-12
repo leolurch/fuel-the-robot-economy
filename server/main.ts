@@ -81,7 +81,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
   }
   if (req.method === "POST" && url.pathname === "/api/client-log") {
     const raw = await readBody(req, 64_000);
-    appendFileSync("/tmp/rheinau-client.log", `${new Date().toISOString()} ${raw.toString("utf8")}\n`);
+    appendFileSync("/tmp/fuel-the-robot-economy-client.log", `${new Date().toISOString()} ${raw.toString("utf8")}\n`);
     sendJson(res, 200, { ok: true });
     return true;
   }
@@ -91,7 +91,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
       return true;
     }
     const webm = await readBody(req, 80_000_000);
-    const dir = "/tmp/rheinau-capture";
+    const dir = "/tmp/fuel-the-robot-economy-capture";
     mkdirSync(dir, { recursive: true });
     const source = join(dir, "canvas.webm");
     writeFileSync(source, webm);
@@ -163,5 +163,5 @@ const server = createServer((req, res) => {
 
 await startYard();
 server.listen(port, host, () => {
-  console.log(`Rheinau yard listening on http://${host}:${port}`);
+  console.log(`Fuel the Robot Economy yard server listening on http://${host}:${port}`);
 });

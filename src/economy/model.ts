@@ -37,7 +37,7 @@ export const INVENTORY_FULL = 168;
 export const INVENTORY_CAP = 220;
 
 export const ACTOR_META: Record<ActorId, { name: string; role: string }> = {
-  treasury: { name: "Rheinau treasury", role: "Plant machine" },
+  treasury: { name: "Plant treasury", role: "Plant machine" },
   robot: { name: "Kepler-01", role: "Cleaning rover" },
   drone: { name: "Lumen-04", role: "Inspection drone" },
   battery: { name: "Battery", role: "Sells energy to Kepler" },
@@ -47,7 +47,7 @@ export const ACTOR_ORDER: ActorId[] = ["robot", "drone", "battery"];
 
 export const PERSON_META: Record<PersonId, { name: string; role: string }> = {
   city: { name: "City", role: "Buys the plant's power" },
-  plantOwner: { name: "Plant owner", role: "Owns Rheinau" },
+  plantOwner: { name: "Plant owner", role: "Owns the solar plant" },
   robotOwner: { name: "Robot owner", role: "Owns Kepler and Lumen" },
   drain: { name: "Drain", role: "Funds each run, collects it back" },
 };

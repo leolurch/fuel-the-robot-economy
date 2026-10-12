@@ -59,7 +59,7 @@ function stepLine(snap: Snapshot): { title: string; detail: string } {
   if (phase?.id === "inspect") return { title: "Lumen checks the yield", detail: "The drone measures what the plant can sell." };
   if (phase?.id === "recharge") return { title: "Kepler buys energy", detail: "The rover pays the Battery so it can roll out again." };
   if (phase?.id === "refill") return { title: "The plant restocks the battery", detail: "Generation fills the pack back up." };
-  return { title: phase?.label ?? "Rheinau", detail: phase?.blurb ?? "" };
+  return { title: phase?.label ?? "Fuel the Robot Economy", detail: phase?.blurb ?? "" };
 }
 
 function emphasisClass(flow: Flow | null, id: PartyId): string {
@@ -476,7 +476,7 @@ function Header({ agung, yard, onHelp }: { agung: AgungRead; yard: YardStatus | 
       <div className="flex min-w-0 items-center gap-2.5">
         <img src="/favicon.svg" alt="" className="h-8 w-8 shrink-0" />
         <div className="min-w-0">
-          <h1 className="truncate text-base font-bold leading-tight sm:text-lg">Rheinau Solar Yard</h1>
+          <h1 className="truncate text-base font-bold leading-tight sm:text-lg">Fuel the Robot Economy</h1>
           <p className="hidden truncate text-xs text-white/55 sm:block">
             Machines that earn, pay, and recharge themselves on peaq
           </p>
@@ -585,7 +585,7 @@ function HowItWorks({ open, onClose }: { open: boolean; onClose: () => void }) {
       className="m-auto max-h-[min(88vh,760px)] w-[min(94vw,680px)] overflow-y-auto rounded-3xl bg-slate-900 p-0 text-white shadow-2xl ring-1 ring-white/10 backdrop:bg-slate-950/70 backdrop:backdrop-blur-sm"
     >
       <div className="sticky top-0 flex items-center justify-between gap-3 border-b border-white/10 bg-slate-900/95 px-5 py-4 backdrop-blur">
-        <h2 id="how-title" className="text-xl font-bold">How Rheinau works</h2>
+        <h2 id="how-title" className="text-xl font-bold">How Fuel the Robot Economy works</h2>
         <button
           type="button"
           onClick={onClose}
@@ -597,7 +597,7 @@ function HowItWorks({ open, onClose }: { open: boolean; onClose: () => void }) {
       </div>
       <div className="space-y-5 px-5 py-5 text-[15px] leading-relaxed text-white/80">
         <p>
-          A solar plant only earns when its glass is clean. In Rheinau, the machines that keep it clean are economic
+          A solar plant only earns when its glass is clean. In this yard, the machines that keep it clean are economic
           participants: each one has a peaq machine ID and a wallet, gets paid for verified work, and buys its own
           energy. No invoice and no human approval sit between the work and the payment.
         </p>

@@ -1,12 +1,12 @@
 # Demo video script and speaker notes
 
-Timed to the recorded demo (2:45, 1920×1200, 30 fps). The narrated cut uses offline Piper TTS (voice `en_US-ryan-high`). A silent cut with identical picture is available for re-dubbing. Read each block starting at its timestamp. Each block fits inside its window with room to spare, so a slightly slower human read still lands before the next cut.
+Timed to the recorded demo (2:45, 1920×1200, 30 fps). That recording predates the rename to Fuel the Robot Economy and the Drain loop: it still shows the old title, the residents' house, and the rent payment, so the picture needs a new take before the script below matches it. The narrated cut uses offline Piper TTS (voice `en_US-ryan-high`). A silent cut with identical picture is available for re-dubbing. Read each block starting at its timestamp. Each block fits inside its window with room to spare, so a slightly slower human read still lands before the next cut.
 
-Pronunciation: **peaq** = "peek", **Rheinau** = "RINE-ow", **Agung** = "AH-goong", **Lumen** = "LOO-men".
+Pronunciation: **peaq** = "peek", **Agung** = "AH-goong", **Lumen** = "LOO-men".
 
 | # | Start | Window | On screen | Say |
 | --- | --- | --- | --- | --- |
-| 1 | 0:01 | 24 s | The yard paused at dawn. Camera slowly orbits and returns. | This is Rheinau Solar Yard: a live 3D solar farm where the machines run their own economy on peaq. A cleaning rover, an inspection drone, and a battery pack each hold a peaq machine ID and a wallet. They get paid for verified work and buy their own energy, with no invoice and no human approval in the loop. |
+| 1 | 0:01 | 24 s | The yard paused at dawn. Camera slowly orbits and returns. | This is Fuel the Robot Economy: a live 3D solar farm where the machines run their own economy on peaq. A cleaning rover, an inspection drone, and a battery pack each hold a peaq machine ID and a wallet. They get paid for verified work and buy their own energy, with no invoice and no human approval in the loop. |
 | 2 | 0:25 | 13 s | Play. Caption "Dust lands on the panels", then "Lumen inspects the panels". | Each day starts with dust. It settles on the panels and output falls. Lumen, the drone, inspects the rows first and reports them dirty. Only then does Kepler, the rover, leave the dock. |
 | 3 | 0:38 | 18 s | Kepler drives the aisles with the brush down. Phase strip on "Wash". | Kepler washes every row and steers around a blocked one. Its battery drains as it works. The caption below always says what is happening, and the strip shows where we are in the day. |
 | 4 | 0:56 | 8 s | Lumen's second pass. "Recovered yield booked". | Lumen flies a second pass and hashes the recovered yield into a proof, using the same hash as the peaq SDK. |
@@ -15,7 +15,7 @@ Pronunciation: **peaq** = "peek", **Rheinau** = "RINE-ow", **Agung** = "AH-goong
 | 7 | 1:26 | 21 s | Sidebar scrolls to machine IDs and "Agung receipts". Cut to the settlement transaction on Subscan (Confirmed, Success), then back. | None of this is a mock ledger. The four machines are registered in peaq's MachineRegistry on the Agung testnet, and every payment links to its transaction. Here is the settlement transfer on the Subscan explorer, confirmed on chain. Running `npm run verify` recomputes the machine IDs with the peaq SDK and re-checks every receipt. |
 | 8 | 1:47 | 28 s | Speed 4×. Days 2 and 3 run; receipts fill in; "Run complete", every wallet → Drain. | At four times speed, the next days play out. Watch the receipts panel fill as each payment lands. At the end, the plant owner, the robot owner, and the battery send everything back to the Drain wallet that funded the run, so the next run starts from the same budget. |
 | 9 | 2:15 | 18 s | "How it works" guide opens and scrolls: Real on peaq Agung, Simulated, Controls. | The How it works guide tells a judge exactly what is real on peaq and what is simulated. The rover, the drone, and the physics are simulated in the browser. Lumen's activity event does not land yet, because the Agung EventRegistry reverts the call, so the page says so instead of faking a hash. |
-| 10 | 2:33 | 12 s | Back to the yard, run complete. | Rheinau shows the machine economy in one complete loop: machines with identities, earning for verified work and paying for their own energy, settled on peaq. Thanks for watching. |
+| 10 | 2:33 | 12 s | Back to the yard, run complete. | Fuel the Robot Economy shows the machine economy in one complete loop: machines with identities, earning for verified work and paying for their own energy, settled on peaq. Thanks for watching. |
 
 The TTS cut has about 14 s of quiet after block 8 (2:00–2:14) while the 4× run reaches the settlement on screen. When re-recording, an optional line fits there: "Three days, twelve payments, and not one invoice: each payment is released by a machine's own proof of work."
 

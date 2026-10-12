@@ -1,16 +1,18 @@
-# Rheinau Solar Yard
+# Fuel the Robot Economy
 
 **Machines that earn, pay, and recharge themselves on peaq.**
 
-A solar plant only earns when its glass is clean. Rheinau Solar Yard is a live 3D solar farm in the browser. The machines that keep it clean are economic participants: a cleaning rover, an inspection drone, and a battery pack each hold a **peaq machine ID** and a wallet. They get paid for **verified work** and **buy their own energy**, settled on the peaq **Agung** testnet, with no invoice and no human approval in the loop.
+A solar plant only earns when its glass is clean. Fuel the Robot Economy is a live 3D solar farm in the browser. The machines that keep it clean are economic participants: a cleaning rover, an inspection drone, and a battery pack each hold a **peaq machine ID** and a wallet. They get paid for **verified work** and **buy their own energy**, settled on the peaq **Agung** testnet, with no invoice and no human approval in the loop.
 
 Built for the [Germany side track: Advance the Machine Economy with peaq](https://superteam.fun/earn/listing/build-solutions-advancing-the-machine-economy-with-peaq) (Crypto World's Fair).
+
+**Live demo:** [fuel-the-robot-economy.vercel.app](https://fuel-the-robot-economy.vercel.app). It runs in replay mode: no key, and every receipt links to a confirmed Agung transaction.
 
 ![The yard mid-cycle: 3D scene, live step caption, wallets with peaq machine IDs](docs/screenshots/yard-desktop.png)
 
 ## How it advances the Machine Economy
 
-Most "robot fleet" demos stop at telemetry. Rheinau closes the economic loop around one real job:
+Most "robot fleet" demos stop at telemetry. Fuel the Robot Economy closes the economic loop around one real job:
 
 1. **Proof of work, by a machine.** Lumen-04 (drone) inspects the array before and after the wash and hashes the recovered yield into a proof, using the same `computeDataHash` bytes as the peaq SDK.
 2. **Payment released by that proof.** The city buys the recovered power from the plant owner, and the plant owner pays the robot owner for Kepler-01's cleaning and Lumen-04's inspection.
@@ -39,7 +41,7 @@ This recomputes each machine ID with the peaq SDK, checks that MachineRegistry r
 
 | Machine | Address | MachineRegistry ID | Activation |
 | --- | --- | --- | --- |
-| Rheinau treasury (plant) | [`0x8a61…d23A`](https://agung-testnet.subscan.io/account/0x8a61248e23e04b97A0A42A87D09459573478d23A) | `33972125727311862102242550464936382332590305066238494161796118837764432459771` | [`0xec8a…1859`](https://agung-testnet.subscan.io/tx/0xec8a622a893f77ed675902751ea196e5336ad11339a0bd3fc34e50f6d33c1859) |
+| Plant treasury (machine type `Rheinau-treasury`) | [`0x8a61…d23A`](https://agung-testnet.subscan.io/account/0x8a61248e23e04b97A0A42A87D09459573478d23A) | `33972125727311862102242550464936382332590305066238494161796118837764432459771` | [`0xec8a…1859`](https://agung-testnet.subscan.io/tx/0xec8a622a893f77ed675902751ea196e5336ad11339a0bd3fc34e50f6d33c1859) |
 | Kepler-01 (rover) | [`0xa389…0931`](https://agung-testnet.subscan.io/account/0xa3893E09F5546B56B6e845ad194e28a216730931) | `1962884760408859527843867200144780974073261720970703856069487751650844150575` | [`0xde6e…b990`](https://agung-testnet.subscan.io/tx/0xde6ee8f2b2b2b6154034bb7ea763865c9616241a61484a284dabedaa0517b990) |
 | Lumen-04 (drone) | [`0x77cc…20d9`](https://agung-testnet.subscan.io/account/0x77cc0A6aeA9F14c842251aE1384E45A3F30320d9) | `70771729342491203195750444655678312409844457848436599576321158744592664857524` | [`0xd25a…b671`](https://agung-testnet.subscan.io/tx/0xd25a7b8a143b87a9ee0418d5b1370c75f902f1367f890d367535a0390030b671) |
 | Battery (machine type BESS-2) | [`0x6F8A…df5d`](https://agung-testnet.subscan.io/account/0x6F8A86803dafE766F6381F781D5003BC5aa2df5d) | `23561826428746862383207998597570184258462227245211301004858601842139846427384` | [`0xae8d…dcf5`](https://agung-testnet.subscan.io/tx/0xae8de92ad5772c5d0fb4084316917235325b0e6c5200cfe12aa2065c666edcf5) |
@@ -122,9 +124,13 @@ Every visitor's page load starts its own run, and runs share the same wallets, s
 
 ## Deploy
 
+**Static (Vercel or any CDN).** `vercel.json` builds with `npm run build` into `dist/`. No environment variables are needed. Without the yard server, the page shows the verified machine IDs and replays the confirmed run.
+
+**With the yard server (Docker).** This serves the page and `/api`, and sends new transactions when a key is mounted:
+
 ```bash
-docker build -t rheinau-solar-yard .
-docker run --rm -p 4317:4317 rheinau-solar-yard
+docker build -t fuel-the-robot-economy .
+docker run --rm -p 4317:4317 fuel-the-robot-economy
 ```
 
 Add `-e PEAQOS_PRIVATE_KEY_FILE=/run/secrets/agung.key -v /path/agung.key:/run/secrets/agung.key:ro` to enable writes. `deploy/Caddyfile` terminates HTTPS in front of port 4317.
