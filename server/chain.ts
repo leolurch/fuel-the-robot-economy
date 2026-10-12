@@ -4,6 +4,7 @@ import {
   createPublicClient,
   createWalletClient,
   defineChain,
+  encodeFunctionData,
   formatEther,
   http,
   keccak256,
@@ -481,17 +482,71 @@ function spendable(balance: bigint): bigint {
 
 type Sent = { ok: boolean; hash: Hex | null; block: bigint | null; error: string | null };
 
-/** A lagging node can hand out a stale nonce; the send is retried a few times before giving up. */
-async function broadcast(send: () => Promise<Hex>): Promise<Hex> {
-  for (let attempt = 0; ; attempt += 1) {
+const SEND_DEADLINE_MS = 75_000;
+const RESIGN_AFTER_MS = 18_000;
+/** Wei per gas added to each re-signed attempt; a replacement needs a higher tip than the one it replaces. */
+const TIP_STEP = 10_000n;
+
+async function receiptOf(hashes: Hex[]) {
+  for (const hash of hashes) {
+    const receipt = await publicClient.getTransactionReceipt({ hash }).catch(() => null);
+    if (receipt) return receipt;
+  }
+  return null;
+}
+
+/**
+ * The public Agung RPC is load-balanced. A lagging node can hand out a stale nonce, or accept a
+ * transaction into a pool that never gossips it, leaving it pending forever. Every attempt reuses
+ * one nonce, so at most one of them can be mined; an attempt without a receipt is re-signed with a
+ * higher tip so the other nodes take it as a replacement.
+ */
+async function confirmSend(account: PrivateKeyAccount, call: { to: Address; value?: bigint; data?: Hex }) {
+  const wallet = createWalletClient({ account, chain: agung, transport: http(AGUNG_RPC) });
+  const gas = call.data
+    ? ((await publicClient.estimateGas({ account, ...call })) * 6n) / 5n
+    : 21_000n;
+  let nonce = await publicClient.getTransactionCount({ address: account.address, blockTag: "latest" });
+  const hashes: Hex[] = [];
+  const deadline = Date.now() + SEND_DEADLINE_MS;
+  for (let attempt = 0n; Date.now() < deadline; attempt += 1n) {
+    const mined = await receiptOf(hashes);
+    if (mined) return mined;
+    const latest = await publicClient.getTransactionCount({ address: account.address, blockTag: "latest" });
+    if (latest > nonce) {
+      // The nonce moved on: either one of ours landed (its receipt may lag on this node) or the first nonce was stale.
+      for (let check = 0; check < 3 && hashes.length > 0; check += 1) {
+        await sleep(2_000);
+        const late = await receiptOf(hashes);
+        if (late) return late;
+      }
+      nonce = latest;
+    }
+    const block = await publicClient.getBlock({ blockTag: "latest" });
+    const tip = attempt * TIP_STEP;
+    const serializedTransaction = await wallet.signTransaction({
+      account,
+      chain: agung,
+      ...call,
+      gas,
+      nonce,
+      maxPriorityFeePerGas: tip,
+      maxFeePerGas: (block.baseFeePerGas ?? 0n) * 2n + tip,
+    });
+    hashes.push(keccak256(serializedTransaction));
     try {
-      return await send();
+      await publicClient.sendRawTransaction({ serializedTransaction });
     } catch (error) {
-      const text = explain(error);
-      if (attempt >= 3 || !/nonce|already known|replacement/i.test(text)) throw error;
-      await sleep(2_000);
+      if (!/nonce|already known|replacement|underpriced|priority|banned|stale/i.test(explain(error))) throw error;
+    }
+    const until = Math.min(deadline, Date.now() + RESIGN_AFTER_MS);
+    while (Date.now() < until) {
+      await sleep(2_500);
+      const receipt = await receiptOf(hashes);
+      if (receipt) return receipt;
     }
   }
+  throw new Error(`no receipt within ${SEND_DEADLINE_MS / 1000} s for ${hashes.join(", ") || "any attempt"}`);
 }
 
 async function sendNative(
@@ -512,9 +567,8 @@ async function sendNative(
       error: `${fromName} holds ${formatEther(balance)} PEAQ, which cannot cover ${formatEther(amount)} PEAQ plus gas. No transaction was submitted.`,
     };
   }
-  const wallet = createWalletClient({ account: from, chain: agung, transport: http(AGUNG_RPC) });
-  const hash = await broadcast(() => wallet.sendTransaction({ account: from, chain: agung, to, value: amount }));
-  const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 75_000 });
+  const receipt = await confirmSend(from, { to, value: amount });
+  const hash = receipt.transactionHash;
   if (receipt.status !== "success") {
     return { ok: false, hash, block: receipt.blockNumber, error: `Transfer reverted on Agung: ${hash}` };
   }
@@ -572,9 +626,11 @@ async function submitInspection(run: string, cycle: number, cleanlinessMilli: nu
         toHex(JSON.stringify({ t: "inspection", day: cycle, cleanlinessMilli })),
       ],
     });
-    const wallet = createWalletClient({ account: lumen.account, chain: agung, transport: http(AGUNG_RPC) });
-    const hash = await broadcast(() => wallet.writeContract(request));
-    const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 75_000 });
+    const receipt = await confirmSend(lumen.account, {
+      to: request.address,
+      data: encodeFunctionData({ abi: legacyEventAbi, functionName: "submitEvent", args: request.args }),
+    });
+    const hash = receipt.transactionHash;
     if (receipt.status !== "success") return fail(`Event reverted on Agung: ${hash}`, hash);
     return finish({ ...base, txHash: hash, explorer: explorer(hash), ok: true, error: null, block: Number(receipt.blockNumber) });
   } catch (error) {
