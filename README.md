@@ -137,7 +137,7 @@ node -e 'process.stdout.write(JSON.stringify({key:require("fs").readFileSync(pro
   | curl -sS -X POST https://<deployment>/api/peaq/enroll -H 'content-type: application/json' --data-binary @-
 ```
 
-The endpoint only accepts the key that controls the operator address, so nobody else can swap in a wallet. Neither the static bundle nor any response contains key material. The deploy also adds a Vercel Firewall rate limit on `/api/peaq/settle`.
+The endpoint only accepts the key that controls the operator address, so nobody else can swap in a wallet. Neither the static bundle nor any response contains key material.
 
 **Static (any CDN).** Serve `dist/` from `npm run build`. Without the writer, the page shows the verified machine IDs and replays the recorded run.
 
