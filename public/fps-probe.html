@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8" />
+<canvas id="c" style="width:100vw;height:100vh;display:block"></canvas>
+<script>
+const canvas = document.getElementById("c");
+const gl = canvas.getContext("webgl2", { antialias: false, powerPreference: "high-performance" });
+function resize() {
+  canvas.width = canvas.clientWidth;
+  canvas.height = canvas.clientHeight;
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+resize();
+let frames = 0;
+const start = performance.now();
+function loop() {
+  frames += 1;
+  gl.clearColor(0.4, 0.7, 0.9, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+setTimeout(() => {
+  const fps = frames / ((performance.now() - start) / 1000);
+  const body = `probe-fps ${fps.toFixed(2)} ${canvas.width}x${canvas.height}`;
+  fetch("/api/client-log", { method: "POST", body });
+  document.title = body;
+}, 3000);
+</script>

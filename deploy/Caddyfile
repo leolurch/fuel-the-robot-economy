@@ -1,0 +1,8 @@
+# Point a domain at this host, then:
+#   caddy run --config deploy/Caddyfile
+# Caddy gets a certificate and proxies HTTPS to the yard.
+# Replace yard.example.com with the user's domain.
+
+yard.example.com {
+	reverse_proxy 127.0.0.1:4317
+}

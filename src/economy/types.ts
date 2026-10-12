@@ -1,0 +1,117 @@
+export type ActorId = "treasury" | "robot" | "drone" | "battery";
+
+export type PersonId = "customers" | "plantOwner" | "robotOwner" | "city";
+
+export type PartyId = ActorId | PersonId;
+
+export type Phase = "soil" | "survey" | "wash" | "inspect" | "pay" | "recharge" | "refill";
+
+export type InspectionVerdict = "dirty" | "clean";
+
+export type Speed = 1 | 2 | 4;
+
+export type RoverCmd = "idle" | "drive" | "wash" | "hold" | "dock" | "charge";
+
+export type DroneCmd = "loiter" | "survey" | "verify" | "hold";
+
+export type FlowKind = "pay" | "book" | "energy";
+
+export type Flow = {
+  kind: FlowKind;
+  from: PartyId;
+  to: PartyId;
+  amountCents: number;
+  label: string;
+  progress: number;
+};
+
+export type LogKind = "info" | "pay" | "proof" | "energy";
+
+export type ChainKind = "power" | "work" | "settlement" | "rent";
+
+export type TransferRow = {
+  id: string;
+  label: string;
+  amountPeaq: string;
+  fromName: string;
+  toName: string;
+  fromAddress: string;
+  toAddress: string;
+  hash: string | null;
+  explorer: string | null;
+  ok: boolean;
+  error: string | null;
+};
+
+export type ChainJob = {
+  id: string;
+  kind: ChainKind;
+  cycle: number;
+  cleanlinessMilli: number;
+  state: "pending" | "settled";
+};
+
+export type LogEvent = {
+  id: number;
+  cycle: number;
+  phase: string;
+  kind: LogKind;
+  text: string;
+};
+
+export type Wallet = {
+  id: PartyId;
+  name: string;
+  role: string;
+  address: `0x${string}`;
+  did: string;
+  balanceCents: number;
+  lastTx: string;
+};
+
+export type Pose = {
+  x: number;
+  z: number;
+  heading: number;
+};
+
+export type Snapshot = {
+  phase: Phase;
+  phaseIndex: number;
+  progress: number;
+  cycle: number;
+  paused: boolean;
+  speed: Speed;
+  rowDirt: number[];
+  robotBattery: number;
+  inventoryKwh: number;
+  inventoryCap: number;
+  yieldKw: number;
+  nameplateKw: number;
+  coverage: number;
+  roverCmd: RoverCmd;
+  droneCmd: DroneCmd;
+  robot: Pose;
+  drone: Pose;
+  brushEngaged: boolean;
+  flow: Flow | null;
+  wallets: Record<ActorId, Wallet>;
+  people: Record<PersonId, Wallet>;
+  transfers: TransferRow[];
+  daylight: number;
+  runComplete: boolean;
+  events: LogEvent[];
+  topics: Record<string, string>;
+  proofHash: string;
+  cleanlinessMilli: number;
+  inspection: InspectionVerdict | null;
+  chainJobs: ChainJob[];
+  resetGeneration: number;
+};
+
+export type MachineIdentity = {
+  address: `0x${string}`;
+  did: string;
+};
+
+export type IdentityBook = Record<ActorId, MachineIdentity>;
