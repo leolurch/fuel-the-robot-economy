@@ -9,6 +9,10 @@ export default function App() {
   const [snap, setSnap] = useState<Snapshot>(() => engine.snapshot());
 
   useEffect(() => engine.subscribe(setSnap), [engine]);
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has("debug")) return;
+    (window as unknown as { yardEngine?: Engine }).yardEngine = engine;
+  }, [engine]);
 
   return (
     <main className="h-full w-full overflow-hidden bg-[#8fb4c6]">

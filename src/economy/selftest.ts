@@ -76,7 +76,7 @@ assert(
   once.proofHash === computeDataHash(inspectionPayload(1, once.cleanlinessMilli)),
   "proof hash drifted from peaq computeDataHash",
 );
-assert(once.events.some((event) => event.text.includes("The Drain funds the run")), "missing run funding");
+assert(once.events.some((event) => event.text.includes("The run budget goes out")), "missing run funding");
 assert(once.events.some((event) => event.text.includes("The city pays the plant owner")), "missing power payment");
 assert(once.chainJobs.some((job) => job.kind === "fund"), "missing fund job");
 assert(once.events.some((event) => event.text.includes("pays the robot owner")), "missing robot-owner payment");
@@ -119,7 +119,7 @@ for (const id of ["robot", "battery"] as const) {
   assert(closed.wallets[id].balanceCents === 0, `${id} still holds ${closed.wallets[id].balanceCents}`);
 }
 assert(closed.chainJobs.some((job) => job.kind === "settlement"), "missing settlement job");
-assert(closed.events.some((event) => event.text.includes("back to the Drain")), "missing settlement log");
+assert(closed.events.some((event) => event.text.includes("Funds reset for the next run")), "missing settlement log");
 
 const gaps = clearanceProblems();
 assert(gaps.length === 0, gaps.slice(0, 6).join(" | ") || "clearance");

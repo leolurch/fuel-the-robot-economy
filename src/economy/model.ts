@@ -49,10 +49,11 @@ export const PERSON_META: Record<PersonId, { name: string; role: string }> = {
   city: { name: "City", role: "Buys the plant's power" },
   plantOwner: { name: "Plant owner", role: "Owns the solar plant" },
   robotOwner: { name: "Robot owner", role: "Owns Kepler and Lumen" },
-  drain: { name: "Drain", role: "Funds each run, collects it back" },
+  drain: { name: "Run reserve", role: "Funds each run in the background" },
 };
 
-export const PERSON_ORDER: PersonId[] = ["city", "plantOwner", "robotOwner", "drain"];
+/** The run reserve is a background wallet, so it has no card. */
+export const PERSON_ORDER: PersonId[] = ["city", "plantOwner", "robotOwner"];
 
 export const PERSON_OPENING_CENTS: Record<PersonId, number> = {
   city: 0,

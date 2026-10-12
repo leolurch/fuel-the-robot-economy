@@ -53,11 +53,21 @@ import type {
   Wallet,
 } from "./types.ts";
 
-const CLEAN_DIRT = 0.045;
-const SOIL_END = 0.8;
+export const CLEAN_DIRT = 0.045;
+export const SOIL_END = 0.8;
 const CHARGE_LOW = 0.33;
 const CHARGE_FULL = 0.94;
 const INVENTORY_AFTER_SALE = INVENTORY_FULL - TARIFF.rechargeKwh;
+const DAY_SECONDS = PHASES.reduce((sum, phase) => sum + phase.seconds, 0);
+const PHASE_START = PHASES.map((_, index) => PHASES.slice(0, index).reduce((sum, phase) => sum + phase.seconds, 0));
+
+/** Array output for a given average soiling. The yield proof and the HUD meter both read this. */
+export function yieldKwFor(avgDirt: number): number {
+  return NAMEPLATE_KW * (1 - 0.46 * avgDirt);
+}
+
+/** Output with every row at the end-of-soil dirt level, just before Kepler starts washing. */
+export const SOILED_KW = yieldKwFor(SOIL_END);
 
 const FALLBACK: IdentityBook = {
   treasury: {
@@ -156,6 +166,8 @@ export class Engine {
   cleanlinessMilli = 0;
   inspection: InspectionVerdict | null = null;
   daylight = 0.55;
+  /** 0 at the start of a day's first phase, 1 at the end of its last. Drives the sun path. */
+  dayProgress = 0;
   runComplete = false;
 
   private phaseIndex = 0;
@@ -303,7 +315,8 @@ export class Engine {
       robotBattery: this.robotBattery,
       inventoryKwh: this.inventoryKwh,
       inventoryCap: INVENTORY_CAP,
-      yieldKw: NAMEPLATE_KW * (1 - 0.46 * avg),
+      yieldKw: yieldKwFor(avg),
+      soiledKw: SOILED_KW,
       nameplateKw: NAMEPLATE_KW,
       coverage: this.coverage,
       roverCmd: this.roverCmd,
@@ -330,7 +343,7 @@ export class Engine {
       events: this.events.slice(-24),
       topics: {
         "/array/soiling": avg.toFixed(2),
-        "/array/yield_kw": (NAMEPLATE_KW * (1 - 0.46 * avg)).toFixed(0),
+        "/array/yield_kw": yieldKwFor(avg).toFixed(0),
         "/rover/battery": this.robotBattery.toFixed(2),
         "/rover/coverage": this.coverage.toFixed(2),
         "/rover/cmd": this.roverCmd,
@@ -434,7 +447,7 @@ export class Engine {
       } else {
         this.log(
           "info",
-          "The yard runs three compressed days. The Drain funds the run, the city buys the power, the plant pays the robot owner, and the rover recharges.",
+          "The yard runs three compressed days. The city buys the power, the plant pays the robot owner, the rover recharges, and the run settles at the end.",
         );
       }
       this.log(
@@ -479,6 +492,7 @@ export class Engine {
     const phase = PHASES[this.phaseIndex].id;
     this.phase = phase;
     this.daylight = daylightFor(phase, progress);
+    this.dayProgress = (PHASE_START[this.phaseIndex] + progress * PHASES[this.phaseIndex].seconds) / DAY_SECONDS;
     if (!this.runComplete) this.flow = null;
     this.brushEngaged = false;
     this.inspection = null;
@@ -533,16 +547,16 @@ export class Engine {
         `Sent ${formatPeaq(KEPLER_BUDGET_CENTS)} PEAQ to Kepler-01`,
         `Received ${formatPeaq(KEPLER_BUDGET_CENTS)} PEAQ for three recharges`,
       );
-      this.people.drain.lastTx = `Yard ledger: funded the run with ${formatPeaq(CITY_BUDGET_CENTS + KEPLER_BUDGET_CENTS)} PEAQ`;
+      this.people.drain.lastTx = `Funded the run with ${formatPeaq(CITY_BUDGET_CENTS + KEPLER_BUDGET_CENTS)} PEAQ`;
       this.enqueue("fund");
       this.log(
         "pay",
-        `The Drain funds the run: ${formatPeaq(CITY_BUDGET_CENTS)} PEAQ to the city for three days of power, and ${formatPeaq(KEPLER_BUDGET_CENTS)} PEAQ to Kepler-01 for three recharges.`,
+        `The run budget goes out: ${formatPeaq(CITY_BUDGET_CENTS)} PEAQ to the city for three days of power, and ${formatPeaq(KEPLER_BUDGET_CENTS)} PEAQ to Kepler-01 for three recharges.`,
       );
     }
     if (progress >= 0.12 && progress < 0.56) {
       this.flow = {
-        kind: "pay",
+        kind: "budget",
         from: "drain",
         to: "city",
         amountCents: CITY_BUDGET_CENTS,
@@ -551,7 +565,7 @@ export class Engine {
       };
     } else if (progress >= 0.56 && progress < 0.98) {
       this.flow = {
-        kind: "pay",
+        kind: "budget",
         from: "drain",
         to: "robot",
         amountCents: KEPLER_BUDGET_CENTS,
@@ -822,22 +836,22 @@ export class Engine {
       if (wallet.balanceCents <= 0) continue;
       returned += wallet.balanceCents;
       wallet.balanceCents = 0;
-      wallet.lastTx = "Returned its balance to the Drain";
+      wallet.lastTx = "Settled for the next run";
     }
     this.people.drain.balanceCents += returned;
     this.people.drain.lastTx = `Collected ${formatPeaq(returned)} PEAQ for the next run`;
     this.flow = {
-      kind: "pay",
+      kind: "settle",
       from: "plantOwner",
       to: "drain",
       amountCents: returned,
-      label: "Back to the Drain",
+      label: "Settlement",
       progress: 1,
     };
     this.enqueue("settlement");
     this.log(
       "pay",
-      `Settlement: the plant owner, the robot owner, and the Battery send ${formatPeaq(returned)} PEAQ back to the Drain, ready for the next run.`,
+      `Settled: the plant owner, the robot owner, and the Battery return ${formatPeaq(returned)} PEAQ to the run reserve. Funds reset for the next run.`,
     );
     this.emit();
   }

@@ -53,7 +53,6 @@ function add(
   }
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   geometry.deleteAttribute("uv");
-  geometry.deleteAttribute("normal");
   bag.push(geometry);
 }
 
@@ -194,7 +193,7 @@ let yard: THREE.BufferGeometry | null = null;
 export function yardGeometry(): THREE.BufferGeometry {
   if (yard) return yard;
   const bag: Bag = [];
-  add(bag, new THREE.PlaneGeometry(90, 90), "#5c8a46", 0, 0, 0, -Math.PI / 2);
+  add(bag, new THREE.PlaneGeometry(700, 700, 1, 1), "#5c8a46", 0, 0, 0, -Math.PI / 2);
   const south = rowZ(ROW_COUNT - 1) + 3.2;
   add(
     bag,

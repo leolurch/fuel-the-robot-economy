@@ -23,9 +23,10 @@ const ACCENT: Record<PartyId, string> = {
 };
 
 const CIRCLE =
-  "The sun powers the plant, the city buys that power, the plant pays the robot owner so Kepler and Lumen keep the panels producing, and at the end every wallet returns its balance to the Drain for the next run.";
+  "The sun powers the plant, the city buys that power, the plant pays the robot owner so Kepler and Lumen keep the panels producing, and at the end the run settles so the next one starts fresh.";
 
 function roleFor(flow: Flow | null, id: PartyId): "pays" | "receives" | null {
+  if (flow?.kind === "budget") return flow.to === id ? "receives" : null;
   if (!flow || flow.kind !== "pay") return null;
   if (flow.from === id) return "pays";
   if (flow.to === id) return "receives";
@@ -41,11 +42,16 @@ function stepLine(snap: Snapshot): { title: string; detail: string } {
   const flow = snap.flow;
   if (flow?.kind === "pay") {
     return {
-      title: snap.runComplete ? "Everything goes back to the Drain" : `${partyName(snap, flow.from)} pays ${partyName(snap, flow.to)}`,
+      title: `${partyName(snap, flow.from)} pays ${partyName(snap, flow.to)}`,
       detail: `${flow.label} · ${formatPeaq(flow.amountCents)} PEAQ`,
     };
   }
-  if (snap.runComplete) return { title: "Everything goes back to the Drain", detail: "Ready for the next run" };
+  if (flow?.kind === "budget") {
+    return { title: `${partyName(snap, flow.to)} gets its run budget`, detail: `${flow.label} · ${formatPeaq(flow.amountCents)} PEAQ` };
+  }
+  if (snap.runComplete) {
+    return { title: "Settled — funds reset for next run", detail: `${formatPeaq(flow?.amountCents ?? 0)} PEAQ returned. Press R to run again.` };
+  }
   const phase = PHASES[snap.phaseIndex];
   if (snap.inspection) {
     return {
@@ -66,12 +72,12 @@ function emphasisClass(flow: Flow | null, id: PartyId): string {
   const role = roleFor(flow, id);
   if (role === "pays") return "bg-amber-200 text-slate-950 ring-4 ring-amber-500";
   if (role === "receives") return "bg-emerald-200 text-slate-950 ring-4 ring-emerald-600";
-  if (flow?.kind === "pay") return "opacity-40";
+  if (flow?.kind === "pay" || flow?.kind === "budget") return "opacity-40";
   return "bg-slate-950/78 text-white ring-1 ring-white/10";
 }
 
 function leadParties(ids: readonly PartyId[], flow: Flow | null): PartyId[] {
-  if (!flow || flow.kind !== "pay") return [...ids];
+  if (!flow || (flow.kind !== "pay" && flow.kind !== "budget")) return [...ids];
   const hot = [flow.from, flow.to].filter((id) => ids.includes(id));
   return [...hot, ...ids.filter((id) => !hot.includes(id))];
 }
@@ -119,7 +125,7 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
           if (!result.ok && result.steps.every((step) => step.ok)) {
             engine.recordTransfer({
               id: job.id,
-              label: job.kind === "fund" ? "Run budget" : "Back to the Drain",
+              label: job.kind === "fund" ? "Run budget" : "Settlement",
               amountPeaq: result.amountPeaq ?? "",
               fromName: result.fromName ?? "",
               toName: result.toName ?? "",
@@ -192,9 +198,10 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
             <SceneBoundary>
               <FarmScene engine={engine} />
             </SceneBoundary>
+            <PowerMeter snap={snap} />
           </div>
           <div className="flex shrink-0 flex-wrap items-end justify-between gap-3 border-t border-white/10 bg-slate-950 px-3 py-2.5 sm:px-4">
-            <div className="min-w-0 flex-1" aria-live="polite">
+            <div className="min-w-[min(100%,16rem)] flex-1" aria-live="polite">
               <PhaseStrip snap={snap} />
               <h2 className="mt-1.5 text-2xl font-bold leading-tight text-amber-200 sm:text-4xl">{step.title}</h2>
               <p className="mt-0.5 text-base font-semibold leading-snug text-white sm:text-xl">{step.detail}</p>
@@ -281,6 +288,48 @@ function Controls({
   );
 }
 
+/** Live array output from the simulation, and what the wash recovered once Lumen checks it. */
+function PowerMeter({ snap }: { snap: Snapshot }) {
+  const avgDirt = snap.rowDirt.reduce((sum, value) => sum + value, 0) / snap.rowDirt.length;
+  const share = snap.yieldKw / snap.nameplateKw;
+  const gainKw = Math.round(snap.yieldKw - snap.soiledKw);
+  const gainPct = Math.round(((snap.yieldKw - snap.soiledKw) / snap.soiledKw) * 100);
+  const showGain = (snap.phase === "inspect" || snap.phase === "pay") && gainKw > 0;
+  const healthy = share >= 0.9;
+  const clean = (100 - avgDirt * 100).toFixed(1);
+  return (
+    <div className="pointer-events-none absolute inset-x-2 top-2 z-[25] flex items-center gap-2 sm:inset-x-auto sm:left-3 sm:top-3 sm:flex-col sm:items-start sm:gap-1.5">
+      <div className="min-w-0 flex-1 rounded-xl bg-slate-950/85 px-2.5 py-1.5 shadow-lg ring-1 ring-white/10 sm:w-56 sm:flex-none sm:px-3 sm:py-2">
+        <p className="hidden items-baseline justify-between text-xs font-semibold uppercase tracking-wide text-white/65 sm:flex">
+          <span>Plant output</span>
+          <span>{clean}% clean</span>
+        </p>
+        <p className="flex items-baseline justify-between gap-2">
+          <span className="font-mono text-base font-bold tabular-nums text-white sm:text-2xl">
+            {Math.round(snap.yieldKw)}
+            <span className="ml-1 text-xs font-semibold text-white/60 sm:text-sm">
+              / {snap.nameplateKw} kW<span className="sm:hidden"> output</span>
+            </span>
+          </span>
+          <span className="text-[12px] font-semibold text-white/70 sm:hidden">{clean}% clean</span>
+        </p>
+        <div className="mt-1 h-2 overflow-hidden rounded-full bg-white/15">
+          <div
+            className={`h-full rounded-full transition-[width] duration-500 ease-out ${healthy ? "bg-emerald-400" : "bg-amber-400"}`}
+            style={{ width: `${Math.round(share * 100)}%` }}
+          />
+        </div>
+      </div>
+      {showGain ? (
+        <div className="shrink-0 rounded-xl bg-emerald-400 px-2.5 py-1 text-slate-950 shadow-lg sm:px-3 sm:py-1.5">
+          <p className="text-xl font-black leading-none tabular-nums sm:text-4xl">+{gainKw} kW</p>
+          <p className="mt-0.5 text-[12px] font-bold sm:text-base">+{gainPct}% after cleaning</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ActivityNote() {
   return (
     <section className="min-w-0 overflow-hidden rounded-2xl border border-rose-300/30 bg-rose-500/10 p-3">
@@ -302,7 +351,7 @@ function TransactionPanel({ snap }: { snap: Snapshot }) {
       </div>
       <p className="mt-1 text-sm leading-snug text-white/70">
         {snap.runComplete
-          ? "Every wallet returned its balance to the Drain. Every hash opens on Subscan."
+          ? "Settled. Funds reset for the next run. Every hash opens on Subscan."
           : "Each payment in the loop links to its transaction on the Agung testnet."}
       </p>
       {rows.length === 0 ? (
@@ -613,16 +662,16 @@ function HowItWorks({ open, onClose }: { open: boolean; onClose: () => void }) {
             <li>Kepler pays the Battery 0.01 PEAQ for 22 kWh, then the plant refills the battery.</li>
           </ol>
           <p className="mt-2">
-            The Drain wallet funds each run: 0.15 PEAQ to the city for three days of power and 0.03 PEAQ to Kepler
-            for three recharges. After three days, the plant owner, the robot owner, and the Battery send everything
-            back to the Drain, so the next run starts from the same budget and only gas is spent.
+            Each run starts with a budget: 0.15 PEAQ to the city for three days of power and 0.03 PEAQ to Kepler for
+            three recharges. After three days the run settles: the plant owner, the robot owner, and the Battery return
+            everything, so the next run starts from the same budget and only gas is spent.
           </p>
         </section>
         <section>
           <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">Real on peaq Agung</h3>
           <ul className="mt-2 list-disc space-y-1.5 pl-5 marker:text-emerald-300/70">
             <li>Four machine IDs in MachineRegistry, activated with the peaq SDK: the plant treasury, Kepler-01, Lumen-04, and the Battery.</li>
-            <li>Every payment of a full run is a PEAQ transfer with a receipt: the run budget, power, robot pay, recharges, and the return to the Drain. Machine IDs and hashes link to Subscan.</li>
+            <li>Every payment of a full run is a PEAQ transfer with a receipt: the run budget, power, robot pay, recharges, and the settlement. Machine IDs and hashes link to Subscan.</li>
             <li>Live reads of the chain id, current block, and contract bytecode, straight from the public Agung RPC.</li>
             <li>
               <code className="rounded bg-white/10 px-1 font-mono text-sm">npm run verify</code> recomputes the machine IDs and checks every receipt.

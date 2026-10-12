@@ -1,10 +1,13 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import type { Engine } from "../economy/engine.ts";
 import { PHASES } from "../economy/model.ts";
 import { FIELD_X, FIELD_Z } from "../world/layout.ts";
+
+/** Low enough that a band of sky shows above the city, so the sun is visible near the horizon. */
+const CAMERA_TARGET: [number, number, number] = [FIELD_X - 0.2, 2.2, FIELD_Z - 3];
 import { hasYardServer } from "../peaq/useYardChain.ts";
 import { frameMeter, noteFrame } from "./frameMeter.ts";
 import { Ground } from "./Ground.tsx";
@@ -12,8 +15,6 @@ import {
   BatteryPack,
   Drone,
   InspectionSign,
-  PaymentArrow,
-  PaymentCoin,
   People,
   RefillBeam,
   Robot,
@@ -21,7 +22,10 @@ import {
   Treasury,
 } from "./Machines.tsx";
 import { shortAddress } from "../economy/model.ts";
+import { MoneyFlow } from "./MoneyFlow.tsx";
 import { Panels } from "./Panels.tsx";
+import { SkyAndSun } from "./Sky.tsx";
+import { SKY_FAR } from "./sun.ts";
 
 function FrameCamera() {
   const [narrow, setNarrow] = useState(() => window.innerWidth < 760);
@@ -37,9 +41,9 @@ function FrameCamera() {
     <PerspectiveCamera
       makeDefault
       near={0.1}
-      far={180}
-      fov={narrow ? 54 : 50}
-      position={narrow ? [FIELD_X - 0.4, 18.2, 18.4] : [FIELD_X - 0.5, 19, 19]}
+      far={SKY_FAR}
+      fov={narrow ? 60 : 54}
+      position={narrow ? [FIELD_X - 0.2, 9.4, 23.5] : [FIELD_X - 0.5, 10.2, 23.5]}
     />
   );
 }
@@ -105,27 +109,6 @@ function SimClock({ engine }: { engine: Engine }) {
     });
   });
   return null;
-}
-
-function DayNight({ engine }: { engine: Engine }) {
-  const { scene } = useThree();
-  const color = useMemo(() => new THREE.Color("#9dc6dc"), []);
-  const sun = useRef<THREE.Mesh>(null);
-  useFrame(() => {
-    const t = Math.max(0, Math.min(1, engine.daylight));
-    color.setRGB(0.04 + 0.58 * t, 0.07 + 0.68 * t, 0.14 + 0.72 * t);
-    if (scene.background instanceof THREE.Color) scene.background.copy(color);
-    else scene.background = color;
-    if (!sun.current) return;
-    const angle = 0.25 + t * Math.PI * 0.75;
-    sun.current.position.set(FIELD_X + Math.cos(angle) * 14, 0.8 + Math.sin(angle) * 9, FIELD_Z - 8);
-  });
-  return (
-    <mesh ref={sun}>
-      <sphereGeometry args={[0.55, 10, 8]} />
-      <meshBasicMaterial color="#ffe7a8" />
-    </mesh>
-  );
 }
 
 function paintSplitPanel(
@@ -248,7 +231,7 @@ export const FarmScene = memo(function FarmScene({ engine }: { engine: Engine })
     <>
     <Canvas
       className="absolute inset-0"
-      shadows={false}
+      shadows="percentage"
       dpr={[1, 1.5]}
       gl={{ antialias: false, powerPreference: "high-performance", preserveDrawingBuffer: true }}
       onCreated={({ gl }) => {
@@ -257,7 +240,7 @@ export const FarmScene = memo(function FarmScene({ engine }: { engine: Engine })
       }}
     >
       <color attach="background" args={["#9dc6dc"]} />
-      <DayNight engine={engine} />
+      <SkyAndSun engine={engine} />
       <Ground />
       <Panels engine={engine} />
       <SoilingHaze engine={engine} />
@@ -267,15 +250,14 @@ export const FarmScene = memo(function FarmScene({ engine }: { engine: Engine })
       <Treasury engine={engine} />
       <People engine={engine} />
       <InspectionSign engine={engine} />
-      <PaymentArrow engine={engine} />
-      <PaymentCoin engine={engine} />
+      <MoneyFlow engine={engine} />
       <RefillBeam engine={engine} />
       <OrbitControls
         makeDefault
-        target={[FIELD_X - 0.2, 0.8, FIELD_Z - 2]}
+        target={CAMERA_TARGET}
         maxPolarAngle={Math.PI / 2.06}
         minDistance={7}
-        maxDistance={42}
+        maxDistance={48}
         enablePan={false}
       />
       <FrameCamera />

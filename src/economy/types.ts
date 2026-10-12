@@ -14,7 +14,8 @@ export type RoverCmd = "idle" | "drive" | "wash" | "hold" | "dock" | "charge";
 
 export type DroneCmd = "loiter" | "survey" | "verify" | "hold";
 
-export type FlowKind = "pay" | "book" | "energy";
+/** "budget" and "settle" move money to and from the run reserve, which is never drawn. */
+export type FlowKind = "pay" | "book" | "energy" | "budget" | "settle";
 
 export type Flow = {
   kind: FlowKind;
@@ -89,6 +90,8 @@ export type Snapshot = {
   inventoryKwh: number;
   inventoryCap: number;
   yieldKw: number;
+  /** Output just before the wash, so the HUD can show what cleaning recovered. */
+  soiledKw: number;
   nameplateKw: number;
   coverage: number;
   roverCmd: RoverCmd;

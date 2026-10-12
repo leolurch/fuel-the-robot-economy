@@ -3,11 +3,10 @@ import { Html } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { Engine } from "../economy/engine.ts";
-import { formatPeaq } from "../economy/model.ts";
 import type { PartyId } from "../economy/types.ts";
 import { inspectionLine } from "../economy/model.ts";
 import { ACTIVITY_STATUS } from "../peaq/activityStatus.ts";
-import { BESS_POS, CITY_POS, DRAIN_POS, DRONE_ALT, FIELD_X, FIELD_Z, PLANT_OWNER_POS, ROBOT_OWNER_POS, TREASURY_POS } from "../world/layout.ts";
+import { BESS_POS, CITY_POS, DRONE_ALT, FIELD_X, FIELD_Z, PLANT_OWNER_POS, ROBOT_OWNER_POS, TREASURY_POS } from "../world/layout.ts";
 import { droneBodyGeometry, robotBodyGeometry } from "./yardMesh.ts";
 
 const up = new THREE.Vector3(0, 1, 0);
@@ -26,11 +25,15 @@ const DROPS = Array.from({ length: 6 }, (_, i) => ({
   phase: i * 0.4,
 }));
 
-function Tag({ text, accent }: { text: string; accent: string }) {
+/** Scene labels keep a fixed pixel size so they stay readable at the default camera distance on any screen. */
+const SCENE_LABEL =
+  "scene-chip flex items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-950/90 px-2.5 py-1 text-[13px] font-semibold text-white shadow-lg sm:text-[15px]";
+
+function Tag({ text, accent, party }: { text: string; accent: string; party: PartyId }) {
   return (
-    <Html position={[0, 1.55, 0]} center distanceFactor={11} zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
-      <div className="flex items-center gap-1 whitespace-nowrap rounded-full bg-slate-950/85 px-2 py-1 text-[13px] font-semibold tracking-wide text-white shadow-lg">
-        <span className={`h-1.5 w-1.5 rounded-full ${accent}`} />
+    <Html position={[0, 1.55, 0]} center zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
+      <div className={SCENE_LABEL} data-party={party}>
+        <span className={`h-2 w-2 rounded-full ${accent}`} />
         {text}
       </div>
     </Html>
@@ -45,7 +48,7 @@ export function Robot({ engine }: { engine: Engine }) {
   const dropGeo = useMemo(() => new THREE.SphereGeometry(0.035, 4, 3), []);
   const dropMat = useMemo(() => new THREE.MeshBasicMaterial({ color: "#e7f7ff" }), []);
   const brushGeo = useMemo(() => new THREE.CylinderGeometry(0.16, 0.16, 0.92, 8), []);
-  const brushMat = useMemo(() => new THREE.MeshBasicMaterial({ color: "#243044" }), []);
+  const brushMat = useMemo(() => new THREE.MeshLambertMaterial({ color: "#243044" }), []);
 
   useFrame(({ clock }, dt) => {
     if (rig.current) {
@@ -76,12 +79,12 @@ export function Robot({ engine }: { engine: Engine }) {
 
   return (
     <group ref={rig}>
-      <mesh geometry={body} frustumCulled={false}>
-        <meshBasicMaterial vertexColors />
+      <mesh geometry={body} frustumCulled={false} castShadow>
+        <meshLambertMaterial vertexColors />
       </mesh>
-      <mesh ref={brush} geometry={brushGeo} material={brushMat} position={[0, 0.2, 0.72]} rotation={[0, 0, Math.PI / 2]} />
+      <mesh ref={brush} geometry={brushGeo} material={brushMat} position={[0, 0.2, 0.72]} rotation={[0, 0, Math.PI / 2]} castShadow />
       <instancedMesh ref={spray} args={[dropGeo, dropMat, DROPS.length]} visible={false} />
-      <Tag text="Kepler-01" accent="bg-orange-500" />
+      <Tag text="Kepler-01" accent="bg-orange-500" party="robot" />
     </group>
   );
 }
@@ -93,7 +96,7 @@ export function Drone({ engine }: { engine: Engine }) {
   const beam = useRef<THREE.Mesh>(null);
   const body = useMemo(() => droneBodyGeometry(), []);
   const rotorGeo = useMemo(() => new THREE.CylinderGeometry(0.28, 0.28, 0.02, 8), []);
-  const rotorMat = useMemo(() => new THREE.MeshBasicMaterial({ color: "#d9dee5" }), []);
+  const rotorMat = useMemo(() => new THREE.MeshLambertMaterial({ color: "#d9dee5" }), []);
   const rotorMesh = useRef<THREE.InstancedMesh>(null);
 
   useLayoutEffect(() => {
@@ -127,8 +130,8 @@ export function Drone({ engine }: { engine: Engine }) {
 
   return (
     <group ref={rig}>
-      <mesh geometry={body} frustumCulled={false}>
-        <meshBasicMaterial vertexColors />
+      <mesh geometry={body} frustumCulled={false} castShadow>
+        <meshLambertMaterial vertexColors />
       </mesh>
       <group ref={rotors}>
         <instancedMesh ref={rotorMesh} args={[rotorGeo, rotorMat, 4]} />
@@ -137,7 +140,7 @@ export function Drone({ engine }: { engine: Engine }) {
         <coneGeometry args={[0.42, 1.3, 8, 1, true]} />
         <meshBasicMaterial color="#bfe6ff" transparent opacity={0.28} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
-      <Tag text="Lumen-04" accent="bg-sky-300" />
+      <Tag text="Lumen-04" accent="bg-sky-300" party="drone" />
     </group>
   );
 }
@@ -181,9 +184,9 @@ export function BatteryPack({ engine }: { engine: Engine }) {
   return (
     <group position={[BESS_POS.x, 0, BESS_POS.z]}>
       <instancedMesh ref={leds} args={[ledGeo, ledMat, 8]} />
-      <Html position={[0, 2.55, 0]} center distanceFactor={11} zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
-        <div className="whitespace-nowrap rounded-full bg-slate-950/85 px-2 py-1 text-[13px] font-semibold text-white">
-          <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-teal-300" />
+      <Html position={[0, 3.5, 0]} center zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
+        <div className={SCENE_LABEL} data-party="battery">
+          <span className="h-2 w-2 rounded-full bg-teal-300" />
           Battery · <span ref={kwhLabel}>{Math.round(engine.inventoryKwh)} kWh</span>
         </div>
       </Html>
@@ -206,9 +209,9 @@ export function Treasury({ engine }: { engine: Engine }) {
         <boxGeometry args={[0.85, 0.7, 0.05]} />
         <meshBasicMaterial ref={windowMat} color="#f8e7b0" />
       </mesh>
-      <Html position={[0, 2.35, 0]} center distanceFactor={11} zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
-        <div className="flex items-center gap-1 whitespace-nowrap rounded-full bg-slate-950/85 px-2 py-1 text-[13px] font-semibold text-white">
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
+      <Html position={[0, 2.35, 0]} center zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
+        <div className={SCENE_LABEL} data-party="treasury">
+          <span className="h-2 w-2 rounded-full bg-amber-300" />
           Plant
         </div>
       </Html>
@@ -216,28 +219,12 @@ export function Treasury({ engine }: { engine: Engine }) {
   );
 }
 
-function placeActor(id: PartyId, target: THREE.Vector3, engine: Engine): void {
-  if (id === "robot") target.set(engine.robot.x, 1.15, engine.robot.z);
-  else if (id === "drone") target.set(engine.drone.x, 2.4, engine.drone.z);
-  else if (id === "battery") target.set(BESS_POS.x, 1.7, BESS_POS.z);
-  else if (id === "drain") target.set(DRAIN_POS.x, 1.35, DRAIN_POS.z);
-  else if (id === "robotOwner") target.set(ROBOT_OWNER_POS.x, 1.35, ROBOT_OWNER_POS.z);
-  else if (id === "city") target.set(CITY_POS.x, 2.4, CITY_POS.z);
-  else if (id === "plantOwner") target.set(PLANT_OWNER_POS.x, 1.35, PLANT_OWNER_POS.z);
-  else target.set(TREASURY_POS.x, 1.8, TREASURY_POS.z);
-}
-
 export function People({ engine }: { engine: Engine }) {
   const label = useRef<HTMLDivElement>(null);
   const last = useRef("");
   useFrame(() => {
     const flow = engine.flow;
-    const text =
-      flow && flow.kind === "pay"
-        ? engine.runComplete
-          ? "Everything goes back to the Drain"
-          : `${nameFor(flow.from)} pays ${nameFor(flow.to)}`
-        : "";
+    const text = flow?.kind === "settle" ? "Settled — funds reset for next run" : "";
     if (label.current && last.current !== text) {
       last.current = text;
       label.current.textContent = text;
@@ -246,32 +233,22 @@ export function People({ engine }: { engine: Engine }) {
   });
   return (
     <group>
-      <Marker engine={engine} id="drain" position={[DRAIN_POS.x, 0, DRAIN_POS.z]} color="#c4b5fd" label="Drain" />
       <Marker engine={engine} id="plantOwner" position={[PLANT_OWNER_POS.x, 0, PLANT_OWNER_POS.z]} color="#f6d98a" label="Plant owner" />
-      <Marker engine={engine} id="robotOwner" position={[ROBOT_OWNER_POS.x, 0, ROBOT_OWNER_POS.z]} color="#fdba74" label="Robot owner" />
-      <Html position={[CITY_POS.x, 6.9, CITY_POS.z]} center distanceFactor={18} zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
-        <div className="whitespace-nowrap rounded-full bg-slate-950/80 px-2 py-1 text-[12px] font-semibold text-white">
+      <Marker engine={engine} id="robotOwner" position={[ROBOT_OWNER_POS.x, 0, ROBOT_OWNER_POS.z]} color="#fdba74" label="Robot owner" labelY={4.7} />
+      <Html position={[CITY_POS.x, 6.9, CITY_POS.z]} center zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
+        <div className={SCENE_LABEL} data-party="city">
+          <span className="h-2 w-2 rounded-full bg-sky-200" />
           City
         </div>
       </Html>
       <Html position={[FIELD_X, 4.2, FIELD_Z]} center zIndexRange={[40, 0]} style={{ pointerEvents: "none" }}>
         <div
           ref={label}
-          className="max-w-[16rem] truncate rounded-full bg-slate-950/90 px-3 py-1 text-center text-[12px] font-semibold text-amber-100"
+          className="whitespace-nowrap rounded-full bg-slate-950/90 px-3.5 py-1.5 text-center text-[15px] font-bold text-amber-100 shadow-lg sm:text-lg"
         />
       </Html>
     </group>
   );
-}
-
-function nameFor(id: PartyId): string {
-  if (id === "robot") return "Kepler-01";
-  if (id === "drone") return "Lumen-04";
-  if (id === "battery") return "Battery";
-  if (id === "treasury" || id === "plantOwner") return "Plant owner";
-  if (id === "drain") return "Drain";
-  if (id === "city") return "City";
-  return "Robot owner";
 }
 
 function Marker({
@@ -280,12 +257,15 @@ function Marker({
   position,
   color,
   label,
+  labelY = 2.05,
 }: {
   engine: Engine;
   id: PartyId;
   position: [number, number, number];
   color: string;
   label: string;
+  /** The robot owner stands behind the Battery from the default camera, so its chip sits higher. */
+  labelY?: number;
 }) {
   const rig = useRef<THREE.Group>(null);
   const chip = useRef<HTMLDivElement>(null);
@@ -302,15 +282,12 @@ function Marker({
   });
   return (
     <group ref={rig} position={position}>
-      <mesh position={[0, 0.85, 0]}>
+      <mesh position={[0, 0.85, 0]} castShadow>
         <cylinderGeometry args={[0.18, 0.28, 1.7, 8]} />
-        <meshBasicMaterial color={color} />
+        <meshLambertMaterial color={color} />
       </mesh>
-      <Html position={[0, 2.05, 0]} center distanceFactor={14} zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
-        <div
-          ref={chip}
-          className="whitespace-nowrap rounded-full bg-slate-950/90 px-2.5 py-1 text-sm font-bold text-white"
-        >
+      <Html position={[0, labelY, 0]} center zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
+        <div ref={chip} className={SCENE_LABEL} data-party={id}>
           {label}
         </div>
       </Html>
@@ -438,106 +415,6 @@ export function InspectionSign({ engine }: { engine: Engine }) {
       <planeGeometry args={[12.6, 5.04]} />
       <meshBasicMaterial ref={material} map={textures.dirty} transparent />
     </mesh>
-  );
-}
-
-export function PaymentArrow({ engine }: { engine: Engine }) {
-  const group = useRef<THREE.Group>(null);
-  const shaft = useRef<THREE.Mesh>(null);
-  const head = useRef<THREE.Mesh>(null);
-  const from = useMemo(() => new THREE.Vector3(), []);
-  const to = useMemo(() => new THREE.Vector3(), []);
-  const control = useMemo(() => new THREE.Vector3(), []);
-  const curve = useMemo(() => new THREE.QuadraticBezierCurve3(new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()), []);
-  const laid = useRef("");
-
-  useFrame(() => {
-    const flow = engine.flow;
-    const visible = flow?.kind === "pay";
-    if (group.current) group.current.visible = Boolean(visible);
-    if (!visible || !flow || flow.kind !== "pay" || !shaft.current || !head.current) return;
-    placeActor(flow.from, from, engine);
-    placeActor(flow.to, to, engine);
-    if (flow.from === "city") from.set(CITY_POS.x, 3.1, CITY_POS.z + 1.6);
-    else from.y = Math.max(from.y, 1.65);
-    if (flow.to === "city") to.set(CITY_POS.x, 3.1, CITY_POS.z + 1.6);
-    else to.y = Math.max(to.y, 1.65);
-    const key = `${from.x.toFixed(2)},${from.y.toFixed(2)},${from.z.toFixed(2)}>${to.x.toFixed(2)},${to.y.toFixed(2)},${to.z.toFixed(2)}`;
-    if (laid.current === key) return;
-    laid.current = key;
-    const span = from.distanceTo(to);
-    control.copy(from).lerp(to, 0.5);
-    control.y = Math.max(from.y, to.y) + Math.min(3.1, 0.7 + span * 0.18);
-    curve.v0.copy(from);
-    curve.v1.copy(control);
-    curve.v2.copy(to);
-    const next = new THREE.TubeGeometry(curve, 48, 0.08, 6, false);
-    shaft.current.geometry.dispose();
-    shaft.current.geometry = next;
-    const tip = curve.getPointAt(1);
-    const before = curve.getPointAt(0.94);
-    beamDir.copy(tip).sub(before);
-    const headLen = 0.58;
-    if (beamDir.lengthSq() < 1e-6) beamDir.set(0, 1, 0);
-    beamDir.normalize();
-    head.current.position.copy(tip).addScaledVector(beamDir, -headLen * 0.35);
-    head.current.quaternion.setFromUnitVectors(up, beamDir);
-  });
-
-  return (
-    <group ref={group} visible={false}>
-      <mesh ref={shaft}>
-        <tubeGeometry args={[curve, 48, 0.08, 6, false]} />
-        <meshBasicMaterial color="#24344f" />
-      </mesh>
-      <mesh ref={head}>
-        <coneGeometry args={[0.2, 0.58, 8]} />
-        <meshBasicMaterial color="#24344f" />
-      </mesh>
-    </group>
-  );
-}
-
-export function PaymentCoin({ engine }: { engine: Engine }) {
-  const rig = useRef<THREE.Group>(null);
-  const label = useRef<HTMLDivElement>(null);
-  const from = useMemo(() => new THREE.Vector3(), []);
-  const to = useMemo(() => new THREE.Vector3(), []);
-  const lastLabel = useRef("");
-
-  useFrame(() => {
-    const flow = engine.flow;
-    const visible = flow?.kind === "pay";
-    const text = visible ? `${nameFor(flow.from)} → ${nameFor(flow.to)} · ${formatPeaq(flow.amountCents)} PEAQ` : "";
-    if (label.current && lastLabel.current !== text) {
-      lastLabel.current = text;
-      label.current.style.visibility = visible ? "visible" : "hidden";
-      label.current.textContent = text;
-    }
-    if (!rig.current) return;
-    rig.current.visible = Boolean(visible);
-    if (!flow || flow.kind !== "pay") return;
-    placeActor(flow.from, from, engine);
-    placeActor(flow.to, to, engine);
-    const t = Math.max(0, Math.min(1, flow.progress));
-    rig.current.position.lerpVectors(from, to, t);
-    rig.current.position.y += Math.sin(t * Math.PI) * 1.6;
-    rig.current.rotation.y += 0.08;
-  });
-
-  return (
-    <group ref={rig} visible={false}>
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.2, 0.2, 0.06, 12]} />
-        <meshBasicMaterial color="#f6c453" />
-      </mesh>
-      <Html center zIndexRange={[30, 0]} style={{ pointerEvents: "none" }}>
-        <div
-          ref={label}
-          className="whitespace-nowrap rounded-full bg-amber-300 px-2 py-0.5 text-[11px] font-bold text-slate-950"
-        />
-      </Html>
-    </group>
   );
 }
 

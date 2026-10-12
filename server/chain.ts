@@ -605,7 +605,7 @@ async function sweepToDrain(run: string, owners: Record<PersonId, PrivateKeyAcco
     if (!source.account) continue;
     const amount = spendable(await publicClient.getBalance({ address: source.account.address }));
     if (amount === 0n) continue;
-    steps.push(await sendStep(run, source.id, "Back to the Drain", source.account, source.name, owners.drain.address, PERSON_META.drain.name, amount));
+    steps.push(await sendStep(run, source.id, "Settlement", source.account, source.name, owners.drain.address, PERSON_META.drain.name, amount));
   }
   return bundle(steps, "No wallet held anything to return. No settlement was submitted.");
 }

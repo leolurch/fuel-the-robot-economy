@@ -22,7 +22,6 @@ export const PANEL_X_MAX = colX(COL_COUNT - 1);
 export const DOCK = { x: colX(1) - 0.2, z: rowZ(ROW_COUNT - 1) + 2.35 };
 export const BESS_POS = { x: colX(0) - 2.55, z: rowZ(ROW_COUNT - 1) + 2.05 };
 export const TREASURY_POS = { x: colX(COL_COUNT - 1) + 2.15, z: rowZ(ROW_COUNT - 1) + 2.05 };
-export const DRAIN_POS = { x: -9.2, z: 0.2 };
 export const ROBOT_HOUSE = { x: -9.2, z: 3.55 };
 export const ROBOT_OWNER_POS = { x: ROBOT_HOUSE.x, z: ROBOT_HOUSE.z + 1.95 };
 export const PLANT_OWNER_POS = { x: TREASURY_POS.x, z: TREASURY_POS.z + 2.2 };
@@ -178,7 +177,6 @@ export function yardSolids(): Solid[] {
     }
   }
   solids.push(solid("robot house", ROBOT_HOUSE.x, ROBOT_HOUSE.z, 1.45, 1.22, 0, 2.7));
-  solids.push(solid("drain", DRAIN_POS.x, DRAIN_POS.z, 0.46, 0.46, 0, 2.5));
   solids.push(solid("robot owner", ROBOT_OWNER_POS.x, ROBOT_OWNER_POS.z, 0.46, 0.46, 0, 2.5));
   solids.push(solid("plant owner", PLANT_OWNER_POS.x, PLANT_OWNER_POS.z, 0.46, 0.46, 0, 2.5));
   solids.push(solid("battery", BESS_POS.x, BESS_POS.z, 1.9, 1.05, 0, 2.45));
@@ -319,7 +317,6 @@ export function clearanceProblems(): string[] {
     problems.push("cable does not start at the plant");
   }
   for (const person of [
-    solid("drain", DRAIN_POS.x, DRAIN_POS.z, 0.46, 0.46, 0, 2.5),
     solid("robot owner", ROBOT_OWNER_POS.x, ROBOT_OWNER_POS.z, 0.46, 0.46, 0, 2.5),
     solid("plant owner", PLANT_OWNER_POS.x, PLANT_OWNER_POS.z, 0.46, 0.46, 0, 2.5),
   ]) {
