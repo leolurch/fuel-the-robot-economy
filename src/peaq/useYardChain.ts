@@ -4,7 +4,10 @@ import type { ChainJob, IdentityBook, PersonId } from "../economy/types.ts";
 import { KNOWN_RECEIPTS } from "./landed.ts";
 import type { SettleResult, YardStatus } from "./yardTypes.ts";
 
-export function useYardChain(engine: Engine): YardStatus | null {
+/** Scopes server-side receipts to this page load so a reload sends fresh transfers instead of reusing old ones. */
+export const SESSION = Math.random().toString(36).slice(2, 10);
+
+export function useYardChain(engine: Engine, run: string): YardStatus | null {
   const [status, setStatus] = useState<YardStatus | null>(null);
   const seen = useRef("");
 
@@ -35,6 +38,7 @@ export function useYardChain(engine: Engine): YardStatus | null {
           engine.setPeople(people);
         }
         for (const row of body.transfers ?? []) {
+          if (row.run !== run) continue;
           engine.recordTransfer({
             id: row.id,
             label: row.label,
@@ -61,12 +65,12 @@ export function useYardChain(engine: Engine): YardStatus | null {
       cancel = true;
       window.clearInterval(id);
     };
-  }, [engine]);
+  }, [engine, run]);
 
   return status;
 }
 
-export async function settleJob(job: ChainJob): Promise<SettleResult> {
+export async function settleJob(job: ChainJob, run: string): Promise<SettleResult> {
   try {
     const response = await fetch("/api/peaq/settle", {
       method: "POST",
@@ -76,6 +80,7 @@ export async function settleJob(job: ChainJob): Promise<SettleResult> {
         kind: job.kind,
         cycle: job.cycle,
         cleanlinessMilli: job.cleanlinessMilli,
+        run,
       }),
     });
     if (!response.ok) throw new Error(`yard server answered ${response.status}`);
@@ -83,6 +88,7 @@ export async function settleJob(job: ChainJob): Promise<SettleResult> {
   } catch (error) {
     const known = KNOWN_RECEIPTS[job.id];
     if (known) return known;
+    if (job.kind === "recharge") return { ok: false, skipped: true };
     const message = error instanceof Error ? error.message : "request failed";
     return { ok: false, error: `Agung write did not land: ${message}` };
   }

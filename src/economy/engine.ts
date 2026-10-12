@@ -742,6 +742,7 @@ export class Engine {
         `Sent ${formatPeaq(TARIFF.rechargeCents)} PEAQ to BESS-2`,
         `Received ${formatPeaq(TARIFF.rechargeCents)} PEAQ from Kepler`,
       );
+      this.enqueue("recharge");
       this.log(
         "pay",
         `Kepler-01 pays BESS-2 ${formatPeaq(TARIFF.rechargeCents)} PEAQ for ${TARIFF.rechargeKwh} kWh and rolls back out with a full pack.`,

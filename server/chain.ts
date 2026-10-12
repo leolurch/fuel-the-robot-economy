@@ -13,7 +13,7 @@ import {
   type Hex,
 } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
-import { PERSON_META, POWER_CENTS, RENT_CENTS, WORK_CENTS } from "../src/economy/model.ts";
+import { PERSON_META, POWER_CENTS, RENT_CENTS, TARIFF, WORK_CENTS } from "../src/economy/model.ts";
 import type { ActorId, ChainKind, PersonId } from "../src/economy/types.ts";
 import { AGUNG_RPC, AGUNG_TOKENOMICS_10 } from "../src/peaq/agung.ts";
 import { AGUNG_DEPLOYMENT } from "../src/peaq/deployment.ts";
@@ -106,9 +106,9 @@ function loadSaved(): Saved {
   }
 }
 
-function saveMachine(machineType: string, machineId: string, txHash: string | null): void {
+function saveMachine(slot: string, machineId: string, txHash: string | null): void {
   const saved = loadSaved();
-  saved[machineType] = { machineId, txHash };
+  saved[slot] = { machineId, txHash };
   mkdirSync(dirname(STATE_FILE), { recursive: true });
   writeFileSync(STATE_FILE, JSON.stringify(saved, null, 2));
 }
@@ -191,7 +191,7 @@ export async function startYard(): Promise<void> {
   const saved = loadSaved();
   rows = SPECS.map((spec) => {
     const account = spec.keyLabel ? privateKeyToAccount(childKey(key, spec.keyLabel)) : operator!;
-    const prior = saved[spec.machineType];
+    const prior = saved[`${operator!.address}:${spec.machineType}`];
     const machineId = prior?.machineId ?? null;
     return {
       actor: spec.actor,
@@ -282,7 +282,7 @@ async function registerAll(starting: bigint): Promise<void> {
       row.txHash = result.transactionHash;
       row.explorer = explorer(result.transactionHash);
       row.error = null;
-      saveMachine(row.machineType, row.machineId, result.transactionHash);
+      saveMachine(`${operator.address}:${row.machineType}`, row.machineId, result.transactionHash);
       balance = await publicClient.getBalance({ address: operator.address });
     } catch (error) {
       row.error = `Activation did not land: ${explain(error)}`;
@@ -290,6 +290,21 @@ async function registerAll(starting: bigint): Promise<void> {
   }
   const failed = rows.filter((row) => row.machineId === null);
   blocker = failed.length === 0 ? null : failed.map((row) => `${row.machineType}: ${row.error}`).join(" ");
+  await fundKepler();
+}
+
+const KEPLER_FLOOR = 5n * 10n ** 16n;
+const KEPLER_FLOAT = 10n ** 17n;
+
+/** Kepler pays BESS-2 from its own wallet, so it needs a small float before the first recharge. */
+async function fundKepler(): Promise<void> {
+  const kepler = rows.find((row) => row.actor === "robot");
+  if (!operator || !kepler?.account) return;
+  const held = await publicClient.getBalance({ address: kepler.address });
+  if (held >= KEPLER_FLOOR) return;
+  const sent = await sendNative(operator, kepler.address, KEPLER_FLOAT, "Rheinau treasury");
+  if (sent.ok) console.log(`Kepler-01 float ${formatEther(KEPLER_FLOAT)} PEAQ: ${explorer(sent.hash)}`);
+  else kepler.error = `Kepler-01 float did not land: ${sent.error}`;
 }
 
 async function refreshBalances(): Promise<void> {
@@ -355,26 +370,30 @@ export async function yardStatus(): Promise<YardStatus> {
 
 const settled = new Map<string, SettleResult>();
 
-export function settle(input: {
+type SettleInput = {
   id: string;
   kind: ChainKind;
   cycle: number;
   cleanlinessMilli: number;
-}): Promise<SettleResult> {
-  const prior = settled.get(input.id) ?? KNOWN_RECEIPTS[input.id];
-  if (prior?.ok) {
-    settled.set(input.id, prior);
-    return Promise.resolve(prior);
+  run: string;
+};
+
+/** With a key every page run sends fresh transfers. Without one, the yard replays receipts that already landed. */
+export function settle(input: SettleInput): Promise<SettleResult> {
+  if (!client || !operator) {
+    const known = KNOWN_RECEIPTS[input.id];
+    if (known?.ok) return Promise.resolve(known);
+    if (input.kind === "recharge") return Promise.resolve({ ok: false, skipped: true });
+    return Promise.resolve({ ok: false, error: blocker ?? "No operator key is loaded. No transaction was submitted." });
   }
+  const key = `${input.run}:${input.id}`;
+  const prior = settled.get(key);
+  if (prior?.ok) return Promise.resolve(prior);
   return enqueue(() => settleOnce(input));
 }
 
-async function settleOnce(input: {
-  id: string;
-  kind: ChainKind;
-  cycle: number;
-  cleanlinessMilli: number;
-}): Promise<SettleResult> {
+async function settleOnce(input: SettleInput): Promise<SettleResult> {
+  const key = `${input.run}:${input.id}`;
   if (!client || !operator) {
     return { ok: false, error: blocker ?? "No operator key is loaded. No transaction was submitted." };
   }
@@ -393,29 +412,21 @@ async function settleOnce(input: {
     }
     if (!people) return { ok: false, error: "Owner wallets are not loaded. No transaction was submitted." };
 
-    if (input.kind === "power" || input.kind === "work" || input.kind === "rent") {
-      const amount =
-        input.kind === "power" ? centsToWei(POWER_CENTS) : input.kind === "work" ? centsToWei(WORK_CENTS) : centsToWei(RENT_CENTS);
-      const from = input.kind === "work" ? people.plantOwner : people.customers;
-      const to = input.kind === "power" ? people.plantOwner : input.kind === "work" ? people.robotOwner : people.city;
-      const fromName = input.kind === "work" ? PERSON_META.plantOwner.name : PERSON_META.customers.name;
-      const toName =
-        input.kind === "power"
-          ? PERSON_META.plantOwner.name
-          : input.kind === "work"
-            ? PERSON_META.robotOwner.name
-            : PERSON_META.city.name;
-      const label = input.kind === "power" ? "Power" : input.kind === "work" ? "Cleaning and inspection" : "Apartment rent";
-      const sent = await sendNative(from, to.address, amount, fromName);
+    if (input.kind !== "settlement") {
+      const plan = transferPlan(input.kind, people);
+      if (!plan) return { ok: false, error: "Machine wallets are not loaded. No transaction was submitted." };
+      const { amount, from, to, fromName, toName, label } = plan;
+      const sent = await sendNative(from, to, amount, fromName);
       if (!sent.ok || !sent.hash) {
         const failed = remember({
           id: input.id,
+          run: input.run,
           label,
           amountPeaq: peaqString(amount),
           fromName,
           toName,
           fromAddress: from.address,
-          toAddress: to.address,
+          toAddress: to,
           txHash: null,
           explorer: null,
           ok: false,
@@ -425,12 +436,13 @@ async function settleOnce(input: {
       }
       const row = remember({
         id: input.id,
+        run: input.run,
         label,
         amountPeaq: peaqString(amount),
         fromName,
         toName,
         fromAddress: from.address,
-        toAddress: to.address,
+        toAddress: to,
         txHash: sent.hash,
         explorer: explorer(sent.hash),
         ok: true,
@@ -447,12 +459,12 @@ async function settleOnce(input: {
         fromAddress: row.fromAddress,
         toAddress: row.toAddress,
       };
-      settled.set(input.id, done);
+      settled.set(key, done);
       return done;
     }
 
-    const bundled = await settleCircle();
-    settled.set(input.id, bundled);
+    const bundled = await settleCircle(input.run);
+    settled.set(key, bundled);
     return bundled;
   } catch (error) {
     return { ok: false, error: `Agung rejected the write: ${explain(error)}` };
@@ -488,14 +500,33 @@ async function sendNative(
   return { ok: true, hash, error: null };
 }
 
+function transferPlan(
+  kind: Exclude<ChainKind, "settlement">,
+  owners: Record<PersonId, PrivateKeyAccount>,
+): { amount: bigint; from: PrivateKeyAccount; to: Address; fromName: string; toName: string; label: string } | null {
+  if (kind === "power") {
+    return { amount: centsToWei(POWER_CENTS), from: owners.customers, to: owners.plantOwner.address, fromName: PERSON_META.customers.name, toName: PERSON_META.plantOwner.name, label: "Power" };
+  }
+  if (kind === "work") {
+    return { amount: centsToWei(WORK_CENTS), from: owners.plantOwner, to: owners.robotOwner.address, fromName: PERSON_META.plantOwner.name, toName: PERSON_META.robotOwner.name, label: "Cleaning and inspection" };
+  }
+  if (kind === "rent") {
+    return { amount: centsToWei(RENT_CENTS), from: owners.customers, to: owners.city.address, fromName: PERSON_META.customers.name, toName: PERSON_META.city.name, label: "Apartment rent" };
+  }
+  const kepler = rows.find((row) => row.actor === "robot")?.account;
+  const bess = rows.find((row) => row.actor === "battery");
+  if (!kepler || !bess) return null;
+  return { amount: centsToWei(TARIFF.rechargeCents), from: kepler, to: bess.address, fromName: "Kepler-01", toName: "BESS-2", label: `${TARIFF.rechargeKwh} kWh recharge` };
+}
+
 function remember(row: ChainTransfer): ChainTransfer {
-  const index = transfers.findIndex((item) => item.id === row.id);
+  const index = transfers.findIndex((item) => item.id === row.id && item.run === row.run);
   if (index >= 0) transfers[index] = row;
   else transfers.push(row);
   return row;
 }
 
-async function settleCircle(): Promise<SettleResult> {
+async function settleCircle(run: string): Promise<SettleResult> {
   if (!people) return { ok: false, error: "Owner wallets are not loaded. No transaction was submitted." };
   const steps: SettleStep[] = [];
   const robotBal = await publicClient.getBalance({ address: people.robotOwner.address });
@@ -515,7 +546,7 @@ async function settleCircle(): Promise<SettleResult> {
       error: sent.ok ? null : sent.error,
     };
     steps.push(step);
-    remember({ id: "settlement-robot", ...step });
+    remember({ id: "settlement-robot", run, ...step });
     if (!sent.ok) {
       return { ok: false, error: sent.error ?? "Robot earnings did not move. Settlement was not submitted.", steps };
     }
@@ -544,7 +575,7 @@ async function settleCircle(): Promise<SettleResult> {
     error: sent.ok ? null : sent.error,
   };
   steps.push(step);
-  remember({ id: "settlement", ...step });
+  remember({ id: "settlement", run, ...step });
   if (!sent.ok || !sent.hash) {
     return { ok: false, error: sent.error ?? "Settlement did not land.", steps };
   }

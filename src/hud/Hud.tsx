@@ -6,7 +6,7 @@ import { ACTIVITY_STATUS } from "../peaq/activityStatus.ts";
 import { KNOWN_MACHINES } from "../peaq/knownMachines.ts";
 import { AGUNG_EXPLORER_ACCOUNT, AGUNG_EXPLORER_TX, LANDED_TRANSFERS } from "../peaq/landed.ts";
 import { useAgungStatus } from "../peaq/useAgung.ts";
-import { settleJob, useYardChain } from "../peaq/useYardChain.ts";
+import { SESSION, settleJob, useYardChain } from "../peaq/useYardChain.ts";
 import type { YardStatus } from "../peaq/yardTypes.ts";
 import type { AgungRead } from "../peaq/agung.ts";
 import { FarmScene } from "../scene/FarmScene.tsx";
@@ -83,7 +83,9 @@ function realHash(hash: string | null, ok: boolean): string | null {
 
 export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
   const agung = useAgungStatus();
-  const yard = useYardChain(engine);
+  const run = `${SESSION}-${snap.resetGeneration}`;
+  const yard = useYardChain(engine, run);
+  const live = yard !== null && !yard.readOnly && yard.operator !== null;
   const posted = useRef(new Set<string>());
   const generation = useRef(snap.resetGeneration);
   const [expanded, setExpanded] = useState(false);
@@ -97,7 +99,8 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
     for (const job of snap.chainJobs) {
       if (posted.current.has(job.id)) continue;
       posted.current.add(job.id);
-      void settleJob(job).then((result) => {
+      void settleJob(job, run).then((result) => {
+        if (result.skipped) return;
         if (result.steps && result.steps.length > 0) {
           for (const step of result.steps) {
             const id = step.label === "Settlement" ? "settlement" : "settlement-robot";
@@ -147,7 +150,7 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
         });
       });
     }
-  }, [engine, snap]);
+  }, [engine, snap, run]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -212,11 +215,11 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
             <SectionLabel>Machines with a peaq ID</SectionLabel>
             <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-1">
               {actors.map((id) => (
-                <WalletCard key={id} id={id} snap={snap} yard={yard} />
+                <WalletCard key={id} id={id} snap={snap} yard={yard} live={live} />
               ))}
             </div>
             <ActivityNote />
-            <TransactionPanel snap={snap} />
+            <TransactionPanel snap={snap} live={live} />
           </aside>
         )}
       </div>
@@ -290,8 +293,8 @@ function ActivityNote() {
   );
 }
 
-function TransactionPanel({ snap }: { snap: Snapshot }) {
-  const rows = mergeRows(snap.transfers);
+function TransactionPanel({ snap, live }: { snap: Snapshot; live: boolean }) {
+  const rows = live ? snap.transfers : mergeRows(snap.transfers);
   const confirmed = rows.filter((row) => realHash(row.hash, row.ok)).length;
   return (
     <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/80 p-3">
@@ -304,11 +307,17 @@ function TransactionPanel({ snap }: { snap: Snapshot }) {
           ? "Settlement closes the circle. Every hash opens on Subscan."
           : "Each payment in the loop links to its transaction on the Agung testnet."}
       </p>
-      <ol className="mt-2 space-y-2">
-        {rows.map((row) => (
-          <TransferItem key={row.id} row={row} />
-        ))}
-      </ol>
+      {rows.length === 0 ? (
+        <p className="mt-2 rounded-xl bg-white/5 px-2.5 py-2 text-sm text-white/60">
+          Waiting for the first payment of this run to confirm on Agung.
+        </p>
+      ) : (
+        <ol className="mt-2 space-y-2">
+          {rows.map((row) => (
+            <TransferItem key={row.id} row={row} />
+          ))}
+        </ol>
+      )}
     </section>
   );
 }
@@ -371,11 +380,11 @@ function PersonCard({ id, snap, yard }: { id: PersonId; snap: Snapshot; yard: Ya
   );
 }
 
-function WalletCard({ id, snap, yard }: { id: ActorId; snap: Snapshot; yard: YardStatus | null }) {
+function WalletCard({ id, snap, yard, live }: { id: ActorId; snap: Snapshot; yard: YardStatus | null; live: boolean }) {
   const wallet = snap.wallets[id];
   const machine = yard?.machines.find((item) => item.actor === id);
   const address = machine && !/^0x0{40}$/.test(machine.address) ? machine.address : wallet.address;
-  const known = KNOWN_MACHINES.find((item) => item.actor === id);
+  const known = live ? undefined : KNOWN_MACHINES.find((item) => item.actor === id);
   const machineId = machine?.machineId ?? known?.machineId ?? null;
   const activation = machine?.explorer ?? (known ? `${AGUNG_EXPLORER_TX}${known.activationTx}` : null);
   const hot = roleFor(snap.flow, id) !== null;

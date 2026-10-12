@@ -27,7 +27,7 @@ export type Flow = {
 
 export type LogKind = "info" | "pay" | "proof" | "energy";
 
-export type ChainKind = "power" | "work" | "settlement" | "rent";
+export type ChainKind = "power" | "work" | "settlement" | "rent" | "recharge";
 
 export type TransferRow = {
   id: string;

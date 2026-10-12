@@ -47,7 +47,7 @@ function sendFile(res: ServerResponse, file: string): void {
 }
 
 function isKind(value: string): value is ChainKind {
-  return value === "power" || value === "work" || value === "settlement" || value === "rent";
+  return value === "power" || value === "work" || value === "settlement" || value === "rent" || value === "recharge";
 }
 
 async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
@@ -62,6 +62,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
       kind?: string;
       cycle?: number;
       cleanlinessMilli?: number;
+      run?: string;
     };
     if (!body.id || !body.kind || !isKind(body.kind) || typeof body.cycle !== "number") {
       sendJson(res, 400, { ok: false, error: "Settlement request is missing id, kind, or cycle." });
@@ -72,6 +73,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
       kind: body.kind,
       cycle: body.cycle,
       cleanlinessMilli: body.cleanlinessMilli ?? 0,
+      run: typeof body.run === "string" ? body.run.slice(0, 80) : "default",
     });
     sendJson(res, 200, result);
     return true;

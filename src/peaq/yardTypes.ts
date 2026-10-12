@@ -33,6 +33,8 @@ export type ChainTransfer = {
   explorer: string | null;
   ok: boolean;
   error: string | null;
+  /** Page run that triggered the transfer, so a reset page does not pick up an older run's rows. */
+  run?: string;
 };
 
 export type YardStatus = {
@@ -65,6 +67,8 @@ export type SettleStep = {
 
 export type SettleResult = {
   ok: boolean;
+  /** Nothing to show for this job, e.g. a recharge in read-only mode, where the landed recharge receipt is listed instead. */
+  skipped?: boolean;
   error?: string;
   txHash?: string;
   explorer?: string;
