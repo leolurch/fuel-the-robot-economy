@@ -104,7 +104,7 @@ export function useYardChain(engine: Engine, run: string): YardStatus | null {
   return status;
 }
 
-type RunQueue = { tail: Promise<unknown>; replay: string | null };
+type RunQueue = { tail: Promise<unknown>; replay: string | null; afterBlock: number };
 
 const queues = new Map<string, RunQueue>();
 
@@ -121,7 +121,7 @@ function replayed(job: ChainJob): SettleResult {
 export function settleJob(job: ChainJob, run: string, onReplay: (reason: string) => void): Promise<SettleResult> {
   let queue = queues.get(run);
   if (!queue) {
-    queue = { tail: Promise.resolve(), replay: null };
+    queue = { tail: Promise.resolve(), replay: null, afterBlock: 0 };
     queues.set(run, queue);
   }
   const state = queue;
@@ -148,6 +148,7 @@ async function settleNow(job: ChainJob, run: string, state: RunQueue, onReplay: 
         cycle: job.cycle,
         cleanlinessMilli: job.cleanlinessMilli,
         run,
+        afterBlock: state.afterBlock || undefined,
       }),
     });
     const json = response.headers.get("content-type")?.includes("application/json") ?? false;
@@ -159,6 +160,7 @@ async function settleNow(job: ChainJob, run: string, state: RunQueue, onReplay: 
     if (!response.ok) throw new Error(`the writer answered ${response.status}`);
     const result = (await response.json()) as SettleResult;
     if (result.replay) return switchToReplay(result.error ?? "The writer did not take this run.");
+    for (const step of result.steps ?? []) state.afterBlock = Math.max(state.afterBlock, step.block ?? 0);
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : "request failed";

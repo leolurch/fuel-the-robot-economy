@@ -64,6 +64,7 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse, url: 
       cycle?: number;
       cleanlinessMilli?: number;
       run?: string;
+      afterBlock?: number;
     };
     if (typeof body.id !== "string" || !body.kind || !isKind(body.kind) || typeof body.cycle !== "number") {
       sendJson(res, 400, { ok: false, error: "Settlement request is missing id, kind, or cycle." });
@@ -77,6 +78,7 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse, url: 
         cycle,
         cleanlinessMilli: Math.max(0, Math.min(1000, Math.round(body.cleanlinessMilli ?? 0))),
         run: typeof body.run === "string" ? body.run.slice(0, 80) : "default",
+        afterBlock: Number.isSafeInteger(body.afterBlock) && (body.afterBlock ?? 0) > 0 ? BigInt(body.afterBlock!) : null,
       },
       { id: visitorId(clientIp(req)) },
     );

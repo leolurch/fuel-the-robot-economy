@@ -68,6 +68,8 @@ export type SettleStep = {
   ok: boolean;
   error: string | null;
   kind?: LegKind;
+  /** Block that included the receipt. */
+  block?: number;
 };
 
 export type SettleResult = {

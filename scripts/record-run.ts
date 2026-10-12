@@ -23,13 +23,14 @@ jobs.push({ id: "settlement", kind: "settlement", cycle: 3, cleanlinessMilli: 95
 type Leg = { job: string; step: SettleStep };
 const legs: Leg[] = [];
 let failed = false;
+let afterBlock = 0;
 console.log(`Run ${run} against ${base}`);
 for (const job of jobs) {
   const started = Date.now();
   const response = await fetch(`${base}/api/peaq/settle`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ...job, run }),
+    body: JSON.stringify({ ...job, run, afterBlock: afterBlock || undefined }),
   });
   const result = (await response.json()) as SettleResult;
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
@@ -53,6 +54,7 @@ for (const job of jobs) {
       error: result.error ?? null,
     }];
   for (const step of steps) {
+    afterBlock = Math.max(afterBlock, step.block ?? 0);
     legs.push({ job: job.id, step });
     console.log(`${step.ok ? "ok  " : "FAIL"} ${job.id.padEnd(11)} ${step.label} ${step.kind === "event" ? "(event)" : `${step.amountPeaq} PEAQ`} ${step.fromName} → ${step.toName} ${step.txHash ?? step.error}`);
     if (!step.ok) failed = true;

@@ -391,7 +391,29 @@ export type SettleInput = {
   cycle: number;
   cleanlinessMilli: number;
   run: string;
+  /** Block of the run's latest receipt. State is read at or after it. */
+  afterBlock: bigint | null;
 };
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The public Agung RPC is load-balanced and some nodes lag a few blocks. Balances are read at the
+ * run's latest receipt block, so a sweep never sees a wallet from before the run's last payment.
+ */
+async function balanceOf(address: Address, afterBlock: bigint | null): Promise<bigint> {
+  if (afterBlock === null) return publicClient.getBalance({ address });
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      const head = await publicClient.getBlockNumber({ cacheTime: 0 });
+      if (head >= afterBlock) return await publicClient.getBalance({ address, blockNumber: head });
+    } catch {
+      // A lagging node may not know the block yet.
+    }
+    await sleep(1_500);
+  }
+  return publicClient.getBalance({ address, blockNumber: afterBlock });
+}
 
 function refuse(reason: string): SettleResult {
   return { ok: false, replay: true, error: reason };
@@ -433,10 +455,10 @@ async function settleOnce(input: SettleInput): Promise<SettleResult> {
       return { ok: false, error: `RPC chain id is ${chainId}. Refusing to send off Agung 9990.` };
     }
     if (input.kind === "fund") return await fundRun(input.run, people);
-    if (input.kind === "settlement") return await sweepToDrain(input.run, people, "return", "Settlement");
+    if (input.kind === "settlement") return await sweepToDrain(input.run, people, "return", "Settlement", input.afterBlock);
     const plan = transferPlan(input.kind, people);
     if (!plan) return { ok: false, error: "Machine wallets are not loaded. No transaction was submitted." };
-    const pay = sendStep(input.run, input.id, plan.label, plan.from, plan.fromName, plan.to, plan.toName, plan.amount);
+    const pay = sendStep(input.run, input.id, plan.label, plan.from, plan.fromName, plan.to, plan.toName, plan.amount, input.afterBlock);
     if (input.kind !== "work") return bundle([await pay], "The transfer did not land.");
     // Lumen's report and the robot owner's pay go out together; they come from different wallets.
     const [event, paid] = await Promise.all([submitInspection(input.run, input.cycle, input.cleanlinessMilli), pay]);
@@ -457,29 +479,46 @@ function spendable(balance: bigint): bigint {
   return amount > 0n ? amount : 0n;
 }
 
+type Sent = { ok: boolean; hash: Hex | null; block: bigint | null; error: string | null };
+
+/** A lagging node can hand out a stale nonce; the send is retried a few times before giving up. */
+async function broadcast(send: () => Promise<Hex>): Promise<Hex> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await send();
+    } catch (error) {
+      const text = explain(error);
+      if (attempt >= 3 || !/nonce|already known|replacement/i.test(text)) throw error;
+      await sleep(2_000);
+    }
+  }
+}
+
 async function sendNative(
   from: PrivateKeyAccount,
   to: Address,
   amount: bigint,
   fromName: string,
-): Promise<{ ok: boolean; hash: Hex | null; error: string | null }> {
-  const balance = await publicClient.getBalance({ address: from.address });
+  afterBlock: bigint | null,
+): Promise<Sent> {
+  const balance = await balanceOf(from.address, afterBlock);
   const gasPrice = await publicClient.getGasPrice();
   const gas = 21_000n * gasPrice * 4n;
   if (amount <= 0n || balance < amount + gas) {
     return {
       ok: false,
       hash: null,
+      block: null,
       error: `${fromName} holds ${formatEther(balance)} PEAQ, which cannot cover ${formatEther(amount)} PEAQ plus gas. No transaction was submitted.`,
     };
   }
   const wallet = createWalletClient({ account: from, chain: agung, transport: http(AGUNG_RPC) });
-  const hash = await wallet.sendTransaction({ account: from, chain: agung, to, value: amount });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 90_000 });
+  const hash = await broadcast(() => wallet.sendTransaction({ account: from, chain: agung, to, value: amount }));
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 75_000 });
   if (receipt.status !== "success") {
-    return { ok: false, hash, error: `Transfer reverted on Agung: ${hash}` };
+    return { ok: false, hash, block: receipt.blockNumber, error: `Transfer reverted on Agung: ${hash}` };
   }
-  return { ok: true, hash, error: null };
+  return { ok: true, hash, block: receipt.blockNumber, error: null };
 }
 
 /** Lumen-04 reports each inspection to EventRegistry from its own wallet, as legacy machine 352. */
@@ -534,10 +573,10 @@ async function submitInspection(run: string, cycle: number, cleanlinessMilli: nu
       ],
     });
     const wallet = createWalletClient({ account: lumen.account, chain: agung, transport: http(AGUNG_RPC) });
-    const hash = await wallet.writeContract(request);
-    const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 90_000 });
+    const hash = await broadcast(() => wallet.writeContract(request));
+    const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 75_000 });
     if (receipt.status !== "success") return fail(`Event reverted on Agung: ${hash}`, hash);
-    return finish({ ...base, txHash: hash, explorer: explorer(hash), ok: true, error: null });
+    return finish({ ...base, txHash: hash, explorer: explorer(hash), ok: true, error: null, block: Number(receipt.blockNumber) });
   } catch (error) {
     return fail(`Agung rejected the inspection event: ${explain(error)}`);
   }
@@ -576,12 +615,13 @@ async function sendStep(
   to: Address,
   toName: string,
   amount: bigint,
+  afterBlock: bigint | null = null,
 ): Promise<SettleStep> {
-  let sent: { ok: boolean; hash: Hex | null; error: string | null };
+  let sent: Sent;
   try {
-    sent = await sendNative(from, to, amount, fromName);
+    sent = await sendNative(from, to, amount, fromName, afterBlock);
   } catch (error) {
-    sent = { ok: false, hash: null, error: `Agung rejected the transfer: ${explain(error)}` };
+    sent = { ok: false, hash: null, block: null, error: `Agung rejected the transfer: ${explain(error)}` };
   }
   const step: SettleStep = {
     id,
@@ -596,6 +636,7 @@ async function sendStep(
     ok: sent.ok,
     error: sent.ok ? null : sent.error,
     kind: "transfer",
+    block: sent.block === null ? undefined : Number(sent.block),
   };
   remember({ run, ...step });
   return step;
@@ -630,7 +671,7 @@ async function fundRun(run: string, owners: Record<PersonId, PrivateKeyAccount>)
   const kepler = rows.find((row) => row.actor === "robot");
   if (!kepler) return { ok: false, error: "Kepler-01 is not loaded. No transaction was submitted." };
   // A run that never reached its settlement (closed tab, lost lease) left money in the loop. Return it first.
-  const recovered = await sweepToDrain(run, owners, "recover", "Unfinished run returned");
+  const recovered = await sweepToDrain(run, owners, "recover", "Unfinished run returned", null);
   const steps: SettleStep[] = [...(recovered.steps ?? [])];
   const city = await sendStep(run, "fund-city", "Power budget", owners.drain, PERSON_META.drain.name, owners.city.address, PERSON_META.city.name, await budgetFor(owners.city.address, CITY_BUDGET_CENTS));
   steps.push(city);
@@ -648,6 +689,7 @@ async function sweepToDrain(
   owners: Record<PersonId, PrivateKeyAccount>,
   prefix: string,
   label: string,
+  afterBlock: bigint | null,
 ): Promise<SettleResult> {
   const kepler = rows.find((row) => row.actor === "robot")?.account;
   const battery = rows.find((row) => row.actor === "battery")?.account;
@@ -661,9 +703,9 @@ async function sweepToDrain(
   const sends = await Promise.all(
     sources.map(async (source) => {
       if (!source.account) return null;
-      const amount = spendable(await publicClient.getBalance({ address: source.account.address }));
+      const amount = spendable(await balanceOf(source.account.address, afterBlock));
       if (amount === 0n) return null;
-      return sendStep(run, `${prefix}-${source.id}`, label, source.account, source.name, owners.drain.address, PERSON_META.drain.name, amount);
+      return sendStep(run, `${prefix}-${source.id}`, label, source.account, source.name, owners.drain.address, PERSON_META.drain.name, amount, afterBlock);
     }),
   );
   const steps = sends.filter((step): step is SettleStep => step !== null);
