@@ -35,7 +35,7 @@ function glassMaterial(): THREE.MeshPhongMaterial {
     map: getCellTexture(),
     color: "#f4f7fb",
     specular: "#fff6dc",
-    shininess: 70,
+    shininess: 140,
   });
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
@@ -47,7 +47,7 @@ function glassMaterial(): THREE.MeshPhongMaterial {
         "#include <lights_fragment_end>",
         [
           "#include <lights_fragment_end>",
-          "reflectedLight.directSpecular *= vClean * 0.7;",
+          "reflectedLight.directSpecular = min(reflectedLight.directSpecular * vClean * 0.28, vec3(0.16));",
           "float sweep = (1.0 - vFlash) * 1.6 - 0.3;",
           "float sheen = vFlash * smoothstep(0.22, 0.0, abs(vPanelUv.x + vPanelUv.y * 0.35 - sweep));",
           "totalEmissiveRadiance += vec3(1.0, 0.96, 0.86) * sheen * 0.85;",

@@ -1,7 +1,7 @@
 import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Engine } from "../economy/engine.ts";
 import { ACTOR_ORDER, PERSON_ORDER, PHASES, RUN_CYCLES, formatPeaq, inspectionLine, shortAddress } from "../economy/model.ts";
-import type { ActorId, Flow, PartyId, PersonId, Snapshot, Speed, TransferRow } from "../economy/types.ts";
+import type { ActorId, ChainJob, Flow, PartyId, PersonId, Snapshot, Speed, TransferRow } from "../economy/types.ts";
 import { KNOWN_MACHINES } from "../peaq/knownMachines.ts";
 import { AGUNG_EXPLORER_ACCOUNT, AGUNG_EXPLORER_TX } from "../peaq/landed.ts";
 import { useAgungStatus } from "../peaq/useAgung.ts";
@@ -97,6 +97,7 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [replays, setReplays] = useState<Record<string, string>>({});
   const [liveRuns, setLiveRuns] = useState<string[]>([]);
+  const [inFlight, setInFlight] = useState<{ run: string; job: ChainJob }[]>([]);
   const mode = runMode(yard, replays[run] ?? null, liveRuns.includes(run));
 
   useEffect(() => {
@@ -108,7 +109,9 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
       if (posted.current.has(job.id)) continue;
       posted.current.add(job.id);
       const onReplay = (reason: string) => setReplays((prior) => (prior[run] ? prior : { ...prior, [run]: reason }));
+      setInFlight((prior) => [...prior, { run, job }]);
       void settleJob(job, run, onReplay).then((result) => {
+        setInFlight((prior) => prior.filter((item) => !(item.run === run && item.job.id === job.id)));
         const replay = result.replay === true;
         if (job.kind === "fund" && result.ok && !replay) setLiveRuns((prior) => (prior.includes(run) ? prior : [...prior, run]));
         if (result.steps && result.steps.length > 0) {
@@ -231,7 +234,7 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
                 <WalletCard key={id} id={id} snap={snap} yard={yard} live={live} />
               ))}
             </div>
-            <TransactionPanel snap={snap} mode={mode} />
+            <TransactionPanel snap={snap} mode={mode} sending={inFlight.filter((item) => item.run === run).map((item) => item.job)} />
           </aside>
         )}
       </div>
@@ -347,7 +350,15 @@ function runMode(yard: YardStatus | null, replayReason: string | null, admitted:
   return { live: false, title: "Replaying a confirmed run", detail: yard.live?.reason ?? yard.blocker };
 }
 
-function TransactionPanel({ snap, mode }: { snap: Snapshot; mode: RunMode }) {
+const SENDING_LABEL: Record<ChainJob["kind"], string> = {
+  fund: "Run budget",
+  power: "Power payment",
+  work: "Robot pay and Lumen's inspection event",
+  recharge: "Kepler's recharge payment",
+  settlement: "Settlement back to the run reserve",
+};
+
+function TransactionPanel({ snap, mode, sending }: { snap: Snapshot; mode: RunMode; sending: ChainJob[] }) {
   const rows = snap.transfers;
   const confirmed = rows.filter((row) => realHash(row.hash, row.ok)).length;
   return (
@@ -365,7 +376,11 @@ function TransactionPanel({ snap, mode }: { snap: Snapshot; mode: RunMode }) {
             <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${mode.live ? "animate-pulse bg-emerald-400" : "bg-sky-300"}`} />
             {mode.title}
           </p>
-          {mode.detail ? <p className="mt-0.5 text-[13px] leading-snug text-white/70">{mode.detail}</p> : null}
+          {mode.detail ? (
+            <p className="mt-0.5 text-[13px] leading-snug text-white/70">
+              {mode.live && snap.runComplete ? "This run sent every transaction below." : mode.detail}
+            </p>
+          ) : null}
           {mode.live ? null : (
             <p className="mt-0.5 text-[13px] leading-snug text-white/70">
               The hashes below are a full earlier run by the same machines, each confirmed on Agung.
@@ -378,7 +393,7 @@ function TransactionPanel({ snap, mode }: { snap: Snapshot; mode: RunMode }) {
           ? "Settled. Funds reset for the next run. Every hash opens on Subscan."
           : "Each payment and each Lumen inspection event links to its transaction on the Agung testnet."}
       </p>
-      {rows.length === 0 ? (
+      {rows.length === 0 && !(mode?.live && sending.length > 0) ? (
         <p className="mt-2 rounded-xl bg-white/5 px-2.5 py-2 text-sm text-white/60">
           Waiting for the first payment of this run to confirm on Agung.
         </p>
@@ -387,6 +402,16 @@ function TransactionPanel({ snap, mode }: { snap: Snapshot; mode: RunMode }) {
           {rows.map((row) => (
             <TransferItem key={row.id} row={row} />
           ))}
+          {mode?.live
+            ? sending.map((job, index) => (
+                <li key={job.id} className="flex items-center gap-2 rounded-xl bg-emerald-400/10 px-2.5 py-2 ring-1 ring-emerald-300/25">
+                  <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${index === 0 ? "animate-pulse bg-emerald-400" : "bg-white/30"}`} />
+                  <p className="min-w-0 truncate text-sm text-white/85">
+                    <span className="font-semibold text-emerald-200">{index === 0 ? "Confirming on Agung" : "Queued"}</span> · {SENDING_LABEL[job.kind]}
+                  </p>
+                </li>
+              ))
+            : null}
         </ol>
       )}
     </section>
@@ -681,6 +706,11 @@ function HowItWorks({ open, onClose }: { open: boolean; onClose: () => void }) {
           A solar plant only earns when its glass is clean. In this yard, the machines that keep it clean are economic
           participants: each one has a peaq machine ID and a wallet, gets paid for verified work, and buys its own
           energy. No invoice and no human approval sit between the work and the payment.
+        </p>
+        <p>
+          Why it matters: after sunlight itself, dust is the biggest factor in a solar plant's output. It costs 3–5% of
+          global solar output, around €3–5 billion a year (IEA-PVPS). Robots that sell verified cleaning and pay for
+          their own charging turn that upkeep into a service machines run themselves.
         </p>
         <section>
           <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-200">One day in the yard</h3>

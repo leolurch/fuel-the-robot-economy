@@ -323,18 +323,18 @@ async function refreshBalances(): Promise<void> {
   );
 }
 
-async function liveAvailability(drainWei: bigint): Promise<{ available: boolean; reason: string | null }> {
+async function liveAvailability(drainWei: bigint, ownRun: string | null): Promise<{ available: boolean; reason: string | null }> {
   if (!operator || !people) return { available: false, reason: blocker ?? "No operator key is loaded on this server." };
   if (drainWei < MIN_DRAIN_WEI) {
     return { available: false, reason: `The run reserve holds ${formatEther(drainWei)} PEAQ, below the ${formatEther(MIN_DRAIN_WEI)} PEAQ a run needs.` };
   }
-  if (await walletsBusy().catch(() => false)) {
+  if (await walletsBusy(ownRun).catch(() => false)) {
     return { available: false, reason: "Another visitor's live run is using the yard wallets right now." };
   }
   return { available: true, reason: null };
 }
 
-export async function yardStatus(): Promise<YardStatus> {
+export async function yardStatus(ownRun: string | null = null): Promise<YardStatus> {
   if (rows.length === 0) rows = knownMachines();
   try {
     if (bondWei === 0n) bondWei = await readBond();
@@ -366,7 +366,7 @@ export async function yardStatus(): Promise<YardStatus> {
     blocker,
     readOnly: operator === null,
     writesLanded,
-    live: await liveAvailability(operatorWei),
+    live: await liveAvailability(operatorWei, ownRun),
     people: personRows,
     transfers: transfers.map((row) => ({ ...row })),
     machines: rows.map((row) => ({

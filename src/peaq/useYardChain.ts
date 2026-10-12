@@ -42,7 +42,7 @@ export function useYardChain(engine: Engine, run: string): YardStatus | null {
         return;
       }
       try {
-        const response = await fetch("/api/peaq");
+        const response = await fetch(`/api/peaq?run=${encodeURIComponent(run)}`);
         const json = response.headers.get("content-type")?.includes("application/json") ?? false;
         if (response.status === 404 || response.status === 405 || (response.ok && !json)) {
           serverMissing = true;

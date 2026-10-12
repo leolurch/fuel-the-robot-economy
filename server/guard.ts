@@ -77,7 +77,8 @@ export async function releaseRun(run: string): Promise<void> {
   if (state.holder?.run === run) await write({ ...state, holder: null });
 }
 
-export async function walletsBusy(): Promise<boolean> {
+/** A page asking about its own run is not blocked by its own lease. */
+export async function walletsBusy(ownRun: string | null = null): Promise<boolean> {
   const state = await read();
-  return state.holder !== null && Date.now() - state.holder.at < LEASE_TTL_MS;
+  return state.holder !== null && state.holder.run !== ownRun && Date.now() - state.holder.at < LEASE_TTL_MS;
 }

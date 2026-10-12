@@ -53,7 +53,8 @@ function clientIp(req: IncomingMessage): string {
 
 export async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
   if (req.method === "GET" && url.pathname === "/api/peaq") {
-    sendJson(res, 200, await yardStatus());
+    const run = url.searchParams.get("run");
+    sendJson(res, 200, await yardStatus(run && run.length <= 80 ? run : null));
     return true;
   }
   if (req.method === "POST" && url.pathname === "/api/peaq/settle") {

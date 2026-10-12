@@ -21,6 +21,8 @@ Most "robot fleet" demos stop at telemetry. Fuel the Robot Economy closes the ec
 
 This is the listing's "two machines, one deal" idea (a robot paying a charger) in an energy DePIN, with identity, proof, and settlement in one working loop rather than five partial features.
 
+**Why it matters.** After sunlight itself, dust is the biggest factor in how much a solar plant produces: it costs 3–5% of global solar output, around €3–5 billion a year ([IEA-PVPS 2022](https://iea-pvps.org/key-topics/soiling-losses-impact-on-the-performance-of-photovoltaic-power-plants/)). Cleaning robots already exist. What's missing is a way for them to sell verified cleaning to the plant, buy their own charging, and build a payment history that can back credit and financing, without an operator in the loop. That is what this yard runs.
+
 ## What is real on peaq, and what is simulated
 
 | Real on Agung (chain id 9990) | Simulated |

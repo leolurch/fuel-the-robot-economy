@@ -404,8 +404,8 @@ export function InspectionSign({ engine }: { engine: Engine }) {
     mesh.current.lookAt(camera.position);
   });
   return (
-    <mesh ref={mesh} position={[0.2, 7.15, -2.2]} visible={false}>
-      <planeGeometry args={[12.6, 5.04]} />
+    <mesh ref={mesh} position={[0.2, 11.1, -2.2]} visible={false}>
+      <planeGeometry args={[10.5, 4.2]} />
       <meshBasicMaterial ref={material} map={textures.dirty} transparent />
     </mesh>
   );
