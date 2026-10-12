@@ -241,14 +241,17 @@ function CanvasRecorder({ engine }: { engine: Engine }) {
 }
 
 export const FarmScene = memo(function FarmScene({ engine }: { engine: Engine }) {
+  const [ready, setReady] = useState(false);
   return (
+    <>
     <Canvas
       className="absolute inset-0"
       shadows={false}
-      dpr={[1, 1]}
+      dpr={[1, 1.5]}
       gl={{ antialias: false, powerPreference: "high-performance", preserveDrawingBuffer: true }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.NoToneMapping;
+        setReady(true);
       }}
     >
       <color attach="background" args={["#9dc6dc"]} />
@@ -278,5 +281,14 @@ export const FarmScene = memo(function FarmScene({ engine }: { engine: Engine })
       <SimClock engine={engine} />
       <CanvasRecorder engine={engine} />
     </Canvas>
+    {ready ? null : (
+      <div className="pointer-events-none absolute inset-0 grid place-items-center bg-[#8fb4c6]" role="status">
+        <p className="flex items-center gap-2 rounded-full bg-slate-950/80 px-4 py-2 text-sm font-semibold text-white">
+          <span aria-hidden className="h-2 w-2 animate-pulse rounded-full bg-amber-300" />
+          Building the yard…
+        </p>
+      </div>
+    )}
+    </>
   );
 });

@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Engine } from "../economy/engine.ts";
-import { ACTOR_ORDER, PERSON_ORDER, PHASES, formatPeaq, inspectionLine, shortAddress } from "../economy/model.ts";
+import { ACTOR_ORDER, PERSON_ORDER, PHASES, RUN_CYCLES, formatPeaq, inspectionLine, shortAddress } from "../economy/model.ts";
 import type { ActorId, Flow, PartyId, PersonId, Snapshot, Speed, TransferRow } from "../economy/types.ts";
 import { ACTIVITY_STATUS } from "../peaq/activityStatus.ts";
-import { LANDED_TRANSFERS } from "../peaq/landed.ts";
+import { KNOWN_MACHINES } from "../peaq/knownMachines.ts";
+import { AGUNG_EXPLORER_ACCOUNT, AGUNG_EXPLORER_TX, LANDED_TRANSFERS } from "../peaq/landed.ts";
 import { useAgungStatus } from "../peaq/useAgung.ts";
 import { settleJob, useYardChain } from "../peaq/useYardChain.ts";
 import type { YardStatus } from "../peaq/yardTypes.ts";
+import type { AgungRead } from "../peaq/agung.ts";
 import { FarmScene } from "../scene/FarmScene.tsx";
 
 const ACCENT: Record<PartyId, string> = {
@@ -85,6 +87,7 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
   const posted = useRef(new Set<string>());
   const generation = useRef(snap.resetGeneration);
   const [expanded, setExpanded] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   useEffect(() => {
     if (generation.current !== snap.resetGeneration) {
@@ -148,6 +151,8 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.target instanceof HTMLElement && event.target.closest("dialog, input, textarea")) return;
       if (event.key === " ") {
         event.preventDefault();
         engine.togglePause();
@@ -157,26 +162,23 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
       else if (event.key === "2") engine.setSpeed(2);
       else if (event.key === "4") engine.setSpeed(4);
       else if (event.key === "f" || event.key === "F") setExpanded((value) => !value);
+      else if (event.key === "?" || event.key === "h" || event.key === "H") setHelpOpen(true);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [engine]);
 
-  const chainLabel =
-    agung.state === "loading"
-      ? "Reading Agung…"
-      : agung.state === "offline"
-        ? "Agung unreachable"
-        : `Agung ${agung.chainId}`;
   const step = stepLine(snap);
   const people = leadParties(PERSON_ORDER, snap.flow) as PersonId[];
   const actors = leadParties(ACTOR_ORDER, snap.flow) as ActorId[];
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-slate-950 text-white">
-      <p className="shrink-0 bg-amber-100 px-4 py-2.5 text-[15px] font-semibold leading-snug text-slate-950 sm:text-lg">
+      <Header agung={agung} yard={yard} onHelp={() => setHelpOpen(true)} />
+      <p className="shrink-0 bg-amber-100 px-3 py-2 text-[13px] font-semibold leading-snug text-slate-950 sm:px-4 sm:text-base lg:text-lg">
         {CIRCLE}
       </p>
+      <HowItWorks open={helpOpen} onClose={() => setHelpOpen(false)} />
       <div
         className={
           expanded
@@ -185,13 +187,15 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
         }
       >
         <section className="flex min-h-0 min-w-0 flex-col">
-          <div className="relative min-h-0 flex-1 overflow-hidden">
-            <FarmScene engine={engine} />
+          <div className="relative min-h-0 flex-1 overflow-hidden bg-[#8fb4c6]">
+            <SceneBoundary>
+              <FarmScene engine={engine} />
+            </SceneBoundary>
           </div>
           <div className="flex shrink-0 flex-wrap items-end justify-between gap-3 border-t border-white/10 bg-slate-950 px-3 py-2.5 sm:px-4">
             <div className="min-w-0 flex-1" aria-live="polite">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-200/80">{chainLabel}</p>
-              <h1 className="text-2xl font-bold leading-tight text-amber-200 sm:text-4xl">{step.title}</h1>
+              <PhaseStrip snap={snap} />
+              <h2 className="mt-1.5 text-2xl font-bold leading-tight text-amber-200 sm:text-4xl">{step.title}</h2>
               <p className="mt-0.5 text-base font-semibold leading-snug text-white sm:text-xl">{step.detail}</p>
             </div>
             <Controls engine={engine} snap={snap} expanded={expanded} onExpand={() => setExpanded((value) => !value)} />
@@ -199,10 +203,14 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
         </section>
         {expanded ? null : (
           <aside className="yard-scroll min-h-0 min-w-0 space-y-2 overflow-x-hidden overflow-y-auto border-t border-white/10 bg-slate-950 p-2 md:border-t-0 md:border-l md:p-3">
-            <div className="grid min-w-0 grid-cols-1 gap-2">
+            <SectionLabel>People and owners</SectionLabel>
+            <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-1">
               {people.map((id) => (
                 <PersonCard key={id} id={id} snap={snap} yard={yard} />
               ))}
+            </div>
+            <SectionLabel>Machines with a peaq ID</SectionLabel>
+            <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-1">
               {actors.map((id) => (
                 <WalletCard key={id} id={id} snap={snap} yard={yard} />
               ))}
@@ -274,20 +282,27 @@ function Controls({
 
 function ActivityNote() {
   return (
-    <section className="min-w-0 overflow-hidden rounded-2xl bg-rose-200 p-3 text-slate-950">
-      <p className="text-sm font-bold">{ACTIVITY_STATUS.label}</p>
-      <p className="mt-1 text-sm font-semibold leading-snug">{ACTIVITY_STATUS.error}</p>
+    <section className="min-w-0 overflow-hidden rounded-2xl border border-rose-300/30 bg-rose-500/10 p-3">
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-rose-200">Not on chain yet</p>
+      <p className="mt-1 text-sm font-semibold text-white">{ACTIVITY_STATUS.label}</p>
+      <p className="mt-0.5 text-sm leading-snug text-white/70">{ACTIVITY_STATUS.error}</p>
     </section>
   );
 }
 
 function TransactionPanel({ snap }: { snap: Snapshot }) {
   const rows = mergeRows(snap.transfers);
+  const confirmed = rows.filter((row) => realHash(row.hash, row.ok)).length;
   return (
     <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/80 p-3">
-      <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-white/55">Transactions</h2>
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-white/55">Agung receipts</h2>
+        <p className="shrink-0 text-xs font-semibold text-emerald-300">{confirmed} confirmed</p>
+      </div>
       <p className="mt-1 text-sm leading-snug text-white/70">
-        {snap.runComplete ? "Settlement closes the circle." : "Payments appear here as they land on Agung."}
+        {snap.runComplete
+          ? "Settlement closes the circle. Every hash opens on Subscan."
+          : "Each payment in the loop links to its transaction on the Agung testnet."}
       </p>
       <ol className="mt-2 space-y-2">
         {rows.map((row) => (
@@ -307,7 +322,7 @@ function mergeRows(live: TransferRow[]): TransferRow[] {
 
 function TransferItem({ row }: { row: TransferRow }) {
   const hash = realHash(row.hash, row.ok);
-  const href = hash ? `https://agung-testnet.subscan.io/tx/${hash}` : null;
+  const href = hash ? `${AGUNG_EXPLORER_TX}${hash}` : null;
   return (
     <li className="min-w-0 overflow-hidden rounded-xl bg-white/5 px-2.5 py-2">
       <div className="flex min-w-0 items-baseline justify-between gap-2">
@@ -342,7 +357,7 @@ function TransferItem({ row }: { row: TransferRow }) {
 function PersonCard({ id, snap, yard }: { id: PersonId; snap: Snapshot; yard: YardStatus | null }) {
   const wallet = snap.people[id];
   const chain = yard?.people.find((person) => person.id === id);
-  const address = chain?.address ?? wallet.address;
+  const address = chain && !/^0x0{40}$/.test(chain.address) ? chain.address : wallet.address;
   const hot = roleFor(snap.flow, id) !== null;
   return (
     <article className={`min-w-0 overflow-hidden rounded-2xl p-3 ${emphasisClass(snap.flow, id)}`}>
@@ -359,7 +374,8 @@ function PersonCard({ id, snap, yard }: { id: PersonId; snap: Snapshot; yard: Ya
 function WalletCard({ id, snap, yard }: { id: ActorId; snap: Snapshot; yard: YardStatus | null }) {
   const wallet = snap.wallets[id];
   const machine = yard?.machines.find((item) => item.actor === id);
-  const address = machine?.address ?? wallet.address;
+  const address = machine && !/^0x0{40}$/.test(machine.address) ? machine.address : wallet.address;
+  const machineId = machine?.machineId ?? KNOWN_MACHINES.find((item) => item.actor === id)?.machineId ?? null;
   const hot = roleFor(snap.flow, id) !== null;
   return (
     <article className={`min-w-0 overflow-hidden rounded-2xl p-3 ${emphasisClass(snap.flow, id)}`}>
@@ -369,9 +385,13 @@ function WalletCard({ id, snap, yard }: { id: ActorId; snap: Snapshot; yard: Yar
         {formatPeaq(wallet.balanceCents)}
         <span className={`ml-1 text-sm font-medium ${hot ? "text-slate-800" : "text-amber-200"}`}>PEAQ</span>
       </p>
-      {machine?.machineId ? (
-        <p className={`mt-1 truncate font-mono text-xs ${hot ? "text-slate-800" : "text-emerald-200"}`} title={machine.machineId}>
-          machine {shortAddress(machine.machineId)}
+      {machineId ? (
+        <p
+          className={`mt-1.5 flex min-w-0 items-center gap-1.5 font-mono text-xs ${hot ? "text-slate-800" : "text-emerald-200"}`}
+          title={`MachineRegistry ID ${machineId}`}
+        >
+          <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${hot ? "bg-slate-800" : "bg-emerald-300"}`} />
+          <span className="truncate">Machine ID {shortAddress(machineId)}</span>
         </p>
       ) : machine?.error ? (
         <p className="mt-1 line-clamp-2 text-xs leading-snug text-rose-200">{machine.error}</p>
@@ -416,9 +436,215 @@ function CardHead({
 }
 
 function AddressLine({ address, hot }: { address: string; hot: boolean }) {
+  const real = /^0x[0-9a-fA-F]{40}$/.test(address) && !/^0x0{40}$/.test(address);
+  const className = `mt-2 block max-w-full truncate font-mono text-sm ${hot ? "text-slate-800" : "text-white/65"}`;
+  if (!real) return <p className={className}>Address pending</p>;
   return (
-    <p className={`mt-2 max-w-full truncate font-mono text-sm ${hot ? "text-slate-800" : "text-white/65"}`} title={address}>
+    <a
+      className={`${className} underline decoration-current/30 underline-offset-2 hover:decoration-current`}
+      href={`${AGUNG_EXPLORER_ACCOUNT}${address}`}
+      target="_blank"
+      rel="noreferrer"
+      title={`${address} on Subscan`}
+    >
       {shortAddress(address)}
-    </p>
+    </a>
+  );
+}
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return <h2 className="px-1 pt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/45">{children}</h2>;
+}
+
+function chainText(agung: AgungRead): { text: string; tone: string } {
+  if (agung.state === "loading") return { text: "Connecting to Agung…", tone: "bg-amber-300 animate-pulse" };
+  if (agung.state === "offline") return { text: "Agung unreachable", tone: "bg-rose-400" };
+  const block = Number(agung.blockNumber).toLocaleString("en-US");
+  return { text: `Agung ${agung.chainId} · block ${block}`, tone: "bg-emerald-400" };
+}
+
+function Header({ agung, yard, onHelp }: { agung: AgungRead; yard: YardStatus | null; onHelp: () => void }) {
+  const chain = chainText(agung);
+  const mode = yard === null ? null : yard.readOnly || !yard.operator ? "Replaying confirmed receipts" : "Live writer";
+  return (
+    <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-slate-950 px-3 py-2 sm:px-4">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <img src="/favicon.svg" alt="" className="h-8 w-8 shrink-0" />
+        <div className="min-w-0">
+          <h1 className="truncate text-base font-bold leading-tight sm:text-lg">Rheinau Solar Yard</h1>
+          <p className="hidden truncate text-xs text-white/55 sm:block">
+            Machines that earn, pay, and recharge themselves on peaq
+          </p>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <span
+          className="hidden items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-1 text-xs font-medium text-white/80 ring-1 ring-white/10 md:inline-flex"
+          role="status"
+          title={agung.state === "offline" ? agung.message : undefined}
+        >
+          <span aria-hidden className={`h-2 w-2 rounded-full ${chain.tone}`} />
+          {chain.text}
+        </span>
+        {mode ? (
+          <span
+            className="hidden rounded-full bg-sky-400/10 px-2.5 py-1 text-xs font-medium text-sky-200 ring-1 ring-sky-300/20 lg:inline-flex"
+            title={yard?.blocker ?? undefined}
+          >
+            {mode}
+          </span>
+        ) : null}
+        <span aria-hidden className={`h-2.5 w-2.5 rounded-full md:hidden ${chain.tone}`} title={chain.text} />
+        <button
+          type="button"
+          onClick={onHelp}
+          className="h-9 rounded-full border border-amber-300/60 px-3 text-sm font-semibold text-amber-200 hover:bg-amber-300/10"
+        >
+          How it works
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function PhaseStrip({ snap }: { snap: Snapshot }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <p className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-200/80">
+        {snap.runComplete ? "Run complete" : `Day ${snap.cycle} of ${RUN_CYCLES}`}
+      </p>
+      <ol className="flex min-w-0 gap-1 overflow-hidden" aria-label="Loop phases">
+        {PHASES.map((phase, index) => {
+          const state = snap.runComplete || index < snap.phaseIndex ? "done" : index === snap.phaseIndex ? "now" : "next";
+          return (
+            <li
+              key={`${phase.id}-${index}`}
+              aria-current={state === "now" ? "step" : undefined}
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                state === "now"
+                  ? "bg-amber-300 text-slate-950"
+                  : state === "done"
+                    ? "bg-white/10 text-white/70"
+                    : "text-white/35"
+              }`}
+            >
+              {phase.short}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+class SceneBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="absolute inset-0 grid place-items-center bg-slate-900 p-6 text-center">
+        <div className="max-w-sm">
+          <p className="text-lg font-semibold">The 3D yard could not start</p>
+          <p className="mt-2 text-sm leading-relaxed text-white/70">
+            This browser did not give the page a WebGL context. The wallets and Agung receipts on the right still
+            update. Try a current Chrome, Edge, or Firefox with hardware acceleration on.
+          </p>
+        </div>
+      </div>
+    );
+  }
+}
+
+function HowItWorks({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    if (open && !dialog.open) dialog.showModal();
+    if (!open && dialog.open) dialog.close();
+  }, [open]);
+
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      onClick={(event) => {
+        if (event.target === ref.current) onClose();
+      }}
+      aria-labelledby="how-title"
+      className="m-auto max-h-[min(88vh,760px)] w-[min(94vw,680px)] overflow-y-auto rounded-3xl bg-slate-900 p-0 text-white shadow-2xl ring-1 ring-white/10 backdrop:bg-slate-950/70 backdrop:backdrop-blur-sm"
+    >
+      <div className="sticky top-0 flex items-center justify-between gap-3 border-b border-white/10 bg-slate-900/95 px-5 py-4 backdrop-blur">
+        <h2 id="how-title" className="text-xl font-bold">How Rheinau works</h2>
+        <button
+          type="button"
+          onClick={onClose}
+          className="h-9 rounded-full bg-white px-3 text-sm font-semibold text-slate-950"
+          autoFocus
+        >
+          Back to the yard
+        </button>
+      </div>
+      <div className="space-y-5 px-5 py-5 text-[15px] leading-relaxed text-white/80">
+        <p>
+          A solar plant only earns when its glass is clean. In Rheinau, the machines that keep it clean are economic
+          participants: each one has a peaq machine ID and a wallet, gets paid for verified work, and buys its own
+          energy. No invoice and no human approval sit between the work and the payment.
+        </p>
+        <section>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-200">One day in the yard</h3>
+          <ol className="mt-2 list-decimal space-y-1.5 pl-5 marker:text-amber-200/70">
+            <li>Dust settles on the panels and output falls.</li>
+            <li><b className="text-white">Lumen-04</b>, the drone, inspects the rows and reports them dirty.</li>
+            <li><b className="text-white">Kepler-01</b>, the rover, washes every row and routes around a blocked one.</li>
+            <li>Lumen flies again and hashes the recovered yield into a proof.</li>
+            <li>Residents pay the plant owner 0.05 PEAQ for that power.</li>
+            <li>The plant owner pays the robot owner 0.03 PEAQ for cleaning and inspection.</li>
+            <li>Kepler pays BESS-2 0.01 PEAQ for 22 kWh, then the plant refills the battery.</li>
+          </ol>
+          <p className="mt-2">
+            Residents also pay the city rent, so the city can buy the plant's energy again. After three days, a
+            settlement returns the owners' earnings and the circle closes.
+          </p>
+        </section>
+        <section>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">Real on peaq Agung</h3>
+          <ul className="mt-2 list-disc space-y-1.5 pl-5 marker:text-emerald-300/70">
+            <li>Four machine IDs in MachineRegistry, activated with the peaq SDK: the plant treasury, Kepler-01, Lumen-04, and BESS-2.</li>
+            <li>Twelve PEAQ transfers with receipts: rent, power, robot pay, wages, recharge, and the settlement. Every hash links to Subscan.</li>
+            <li>Live reads of the chain id, current block, and contract bytecode, straight from the public Agung RPC.</li>
+            <li>
+              <code className="rounded bg-white/10 px-1 font-mono text-sm">npm run verify</code> recomputes the machine IDs and checks every receipt.
+            </li>
+          </ul>
+        </section>
+        <section>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-200">Simulated</h3>
+          <ul className="mt-2 list-disc space-y-1.5 pl-5 marker:text-sky-200/70">
+            <li>The rover, drone, soiling, and battery physics run in the browser. There is no physical hardware.</li>
+            <li>Without a funded key, the page replays the receipts above instead of sending new transfers.</li>
+            <li>Lumen's activity event is not on chain: Agung's EventRegistry reverts the call, so no hash is shown.</li>
+          </ul>
+        </section>
+        <section>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-white/55">Controls</h3>
+          <p className="mt-2">
+            <Kbd>Space</Kbd> pause · <Kbd>1</Kbd> <Kbd>2</Kbd> <Kbd>4</Kbd> speed · <Kbd>R</Kbd> restart ·{" "}
+            <Kbd>F</Kbd> expand the yard · <Kbd>H</Kbd> this guide. Drag to orbit, scroll or pinch to zoom.
+          </p>
+        </section>
+      </div>
+    </dialog>
+  );
+}
+
+function Kbd({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="rounded-md border border-white/20 bg-white/5 px-1.5 py-0.5 font-mono text-xs text-white">{children}</kbd>
   );
 }

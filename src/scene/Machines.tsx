@@ -29,7 +29,7 @@ const DROPS = Array.from({ length: 6 }, (_, i) => ({
 function Tag({ text, accent }: { text: string; accent: string }) {
   return (
     <Html position={[0, 1.55, 0]} center distanceFactor={11} zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
-      <div className="flex items-center gap-1 rounded-full bg-slate-950/85 px-2 py-1 text-[13px] font-semibold tracking-wide text-white shadow-lg">
+      <div className="flex items-center gap-1 whitespace-nowrap rounded-full bg-slate-950/85 px-2 py-1 text-[13px] font-semibold tracking-wide text-white shadow-lg">
         <span className={`h-1.5 w-1.5 rounded-full ${accent}`} />
         {text}
       </div>
@@ -182,7 +182,7 @@ export function BatteryPack({ engine }: { engine: Engine }) {
     <group position={[BESS_POS.x, 0, BESS_POS.z]}>
       <instancedMesh ref={leds} args={[ledGeo, ledMat, 8]} />
       <Html position={[0, 2.55, 0]} center distanceFactor={11} zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
-        <div className="rounded-full bg-slate-950/85 px-2 py-1 text-[13px] font-semibold text-white">
+        <div className="whitespace-nowrap rounded-full bg-slate-950/85 px-2 py-1 text-[13px] font-semibold text-white">
           <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-teal-300" />
           BESS-2 · <span ref={kwhLabel}>{Math.round(engine.inventoryKwh)} kWh</span>
         </div>
@@ -207,7 +207,7 @@ export function Treasury({ engine }: { engine: Engine }) {
         <meshBasicMaterial ref={windowMat} color="#f8e7b0" />
       </mesh>
       <Html position={[0, 2.35, 0]} center distanceFactor={11} zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
-        <div className="flex items-center gap-1 rounded-full bg-slate-950/85 px-2 py-1 text-[13px] font-semibold text-white">
+        <div className="flex items-center gap-1 whitespace-nowrap rounded-full bg-slate-950/85 px-2 py-1 text-[13px] font-semibold text-white">
           <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
           Plant
         </div>
