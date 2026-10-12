@@ -1,3 +1,4 @@
+import { KNOWN_PEOPLE } from "../peaq/knownMachines.ts";
 import { EVENT_TYPE_ACTIVITY, TRUST_SELF_REPORTED, computeDataHash } from "../peaq/proof.ts";
 import {
   DOCK,
@@ -96,13 +97,11 @@ function freshFlags(): Flags {
   };
 }
 
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
-
-const EMPTY_PERSON: Record<PersonId, { address: `0x${string}` }> = {
-  customers: { address: ZERO_ADDRESS },
-  plantOwner: { address: ZERO_ADDRESS },
-  robotOwner: { address: ZERO_ADDRESS },
-  city: { address: ZERO_ADDRESS },
+const DEFAULT_PEOPLE: Record<PersonId, { address: `0x${string}` }> = {
+  customers: { address: KNOWN_PEOPLE.customers },
+  plantOwner: { address: KNOWN_PEOPLE.plantOwner },
+  robotOwner: { address: KNOWN_PEOPLE.robotOwner },
+  city: { address: KNOWN_PEOPLE.city },
 };
 
 export function inspectionPayload(cycle: number, cleanlinessMilli: number): Uint8Array {
@@ -164,12 +163,7 @@ export class Engine {
   private events: LogEvent[] = [];
   private wallets: Record<ActorId, Wallet>;
   private people: Record<PersonId, Wallet>;
-  private personAddresses: Record<PersonId, { address: `0x${string}` }> = {
-    customers: { address: ZERO_ADDRESS },
-    plantOwner: { address: ZERO_ADDRESS },
-    robotOwner: { address: ZERO_ADDRESS },
-    city: { address: ZERO_ADDRESS },
-  };
+  private personAddresses: Record<PersonId, { address: `0x${string}` }> = { ...DEFAULT_PEOPLE };
   private rentSent = false;
   private transfers: TransferRow[] = [];
   private flags: Flags = freshFlags();
@@ -373,7 +367,7 @@ export class Engine {
     const people = {} as Record<PersonId, Wallet>;
     for (const id of ids) {
       const meta = PERSON_META[id];
-      const who = this.personAddresses[id] ?? EMPTY_PERSON[id];
+      const who = this.personAddresses[id] ?? DEFAULT_PEOPLE[id];
       people[id] = {
         id,
         name: meta.name,

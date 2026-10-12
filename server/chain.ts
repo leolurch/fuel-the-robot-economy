@@ -17,6 +17,8 @@ import { PERSON_META, POWER_CENTS, RENT_CENTS, WORK_CENTS } from "../src/economy
 import type { ActorId, ChainKind, PersonId } from "../src/economy/types.ts";
 import { AGUNG_RPC, AGUNG_TOKENOMICS_10 } from "../src/peaq/agung.ts";
 import { AGUNG_DEPLOYMENT } from "../src/peaq/deployment.ts";
+import { KNOWN_MACHINES, KNOWN_PEOPLE } from "../src/peaq/knownMachines.ts";
+import { KNOWN_RECEIPTS } from "../src/peaq/landed.ts";
 import type { ChainTransfer, SettleResult, SettleStep, YardMachine, YardPerson, YardStatus } from "../src/peaq/yardTypes.ts";
 
 const EXPLORER = "https://agung-testnet.subscan.io/tx/";
@@ -142,17 +144,19 @@ async function readBond(): Promise<bigint> {
   return amount;
 }
 
-function emptyMachines(): Row[] {
+/** Without a signing key the yard shows the machines the operator already activated on Agung. */
+function knownMachines(): Row[] {
   return SPECS.map((spec) => {
-    const address = "0x0000000000000000000000000000000000000000" as Address;
+    const known = KNOWN_MACHINES.find((machine) => machine.actor === spec.actor);
+    const address = (known?.address ?? "0x0000000000000000000000000000000000000000") as Address;
     return {
       actor: spec.actor,
       name: spec.name,
       machineType: spec.machineType,
       address,
-      did: `did:peaq:${address}`,
+      did: known ? `did:peaq:${known.machineId}` : `did:peaq:${address}`,
       balance: "0",
-      machineId: null,
+      machineId: known?.machineId ?? null,
       txHash: null,
       explorer: null,
       error: null,
@@ -166,14 +170,14 @@ export async function startYard(): Promise<void> {
     bondWei = await readBond();
   } catch (error) {
     blocker = `Could not read the Agung entry bond: ${explain(error)}`;
-    rows = emptyMachines();
+    rows = knownMachines();
     return;
   }
 
   const key = loadKey();
   if (!key) {
-    blocker = "PEAQOS_PRIVATE_KEY is not set. No activation or transfer was submitted.";
-    rows = emptyMachines();
+    blocker = "Read-only mode: PEAQOS_PRIVATE_KEY is not set, so the yard replays receipts that already landed on Agung and sends nothing new.";
+    rows = knownMachines();
     return;
   }
 
@@ -299,7 +303,7 @@ async function refreshBalances(): Promise<void> {
 }
 
 export async function yardStatus(): Promise<YardStatus> {
-  if (rows.length === 0) rows = emptyMachines();
+  if (rows.length === 0) rows = knownMachines();
   try {
     if (bondWei === 0n) bondWei = await readBond();
     await refreshBalances();
@@ -310,23 +314,19 @@ export async function yardStatus(): Promise<YardStatus> {
     ? formatEther(await publicClient.getBalance({ address: operator.address }).catch(() => 0n))
     : "0";
   const writesLanded = rows.some((row) => row.txHash !== null) || transfers.some((row) => row.ok);
-  const personRows: YardPerson[] = people
-    ? (["customers", "plantOwner", "robotOwner", "city"] as const).map((id) => ({
-        id,
-        name: PERSON_META[id].name,
-        role: PERSON_META[id].role,
-        address: people![id].address,
-        balance: "0",
-      }))
-    : [];
-  if (people) {
-    await Promise.all(
-      personRows.map(async (person) => {
-        const wei = await publicClient.getBalance({ address: person.address }).catch(() => 0n);
-        person.balance = formatEther(wei);
-      }),
-    );
-  }
+  const personRows: YardPerson[] = (["customers", "plantOwner", "robotOwner", "city"] as const).map((id) => ({
+    id,
+    name: PERSON_META[id].name,
+    role: PERSON_META[id].role,
+    address: people ? people[id].address : KNOWN_PEOPLE[id],
+    balance: "0",
+  }));
+  await Promise.all(
+    personRows.map(async (person) => {
+      const wei = await publicClient.getBalance({ address: person.address }).catch(() => 0n);
+      person.balance = formatEther(wei);
+    }),
+  );
   return {
     chainId: AGUNG_DEPLOYMENT.chainId,
     deploymentId: AGUNG_DEPLOYMENT.deploymentId,
@@ -334,6 +334,7 @@ export async function yardStatus(): Promise<YardStatus> {
     operatorBalance,
     bondPeaq: formatEther(bondWei),
     blocker,
+    readOnly: client === null,
     writesLanded,
     people: personRows,
     transfers: transfers.map((row) => ({ ...row })),
@@ -353,137 +354,6 @@ export async function yardStatus(): Promise<YardStatus> {
 }
 
 const settled = new Map<string, SettleResult>();
-
-const CUSTOMERS = "0x90f700f3645b7d062b4520fEcB12E7a1Db0F575C" as Address;
-const PLANT = "0xc04DFd51d21d62B5915Ec01B821260367053b1cC" as Address;
-const ROBOT_OWNER = "0xDe7cCd73d2054DC2820BacbBFAa514F30d9467DD" as Address;
-const CITY = "0x0dF74639f0adEaDCdc1BFc37ee0Ac60933db4A1E" as Address;
-
-function knownPay(
-  label: string,
-  amountPeaq: string,
-  fromName: string,
-  toName: string,
-  fromAddress: Address,
-  toAddress: Address,
-  txHash: Hex,
-): SettleResult {
-  return {
-    ok: true,
-    label,
-    amountPeaq,
-    fromName,
-    toName,
-    fromAddress,
-    toAddress,
-    txHash,
-    explorer: explorer(txHash) ?? undefined,
-  };
-}
-
-/** Receipts already confirmed on Agung. Returned as-is so a restarted writer does not send them again. */
-const KNOWN_RECEIPTS: Record<string, SettleResult> = {
-  rent: knownPay(
-    "Apartment rent",
-    "0.05",
-    "Residents",
-    "City",
-    CUSTOMERS,
-    CITY,
-    "0x1a780caf5366661a95d23510608fd36fb3e60d7d939b6ca97412007a786dac76",
-  ),
-  "1:power": knownPay(
-    "Power",
-    "0.05",
-    "Residents",
-    "Plant owner",
-    CUSTOMERS,
-    PLANT,
-    "0x0942a7918570d833fe1461c46e05da4576648ef3066350ac3dc88ea8897febfc",
-  ),
-  "1:work": knownPay(
-    "Cleaning and inspection",
-    "0.03",
-    "Plant owner",
-    "Robot owner",
-    PLANT,
-    ROBOT_OWNER,
-    "0xb636c5d73105481104db2e75405fc6500f5e21e317d95171d0060f9a06877dd0",
-  ),
-  "2:power": knownPay(
-    "Power",
-    "0.05",
-    "Residents",
-    "Plant owner",
-    CUSTOMERS,
-    PLANT,
-    "0x4373fc71868d0e2ce35850f806b749bdf17b042afc880b170599d403e320706d",
-  ),
-  "2:work": knownPay(
-    "Cleaning and inspection",
-    "0.03",
-    "Plant owner",
-    "Robot owner",
-    PLANT,
-    ROBOT_OWNER,
-    "0x1f1c9a89c669f328271f5179e86d456fc8ab87418eafc30473a79e1a52ecbe00",
-  ),
-  "3:power": knownPay(
-    "Power",
-    "0.05",
-    "Residents",
-    "Plant owner",
-    CUSTOMERS,
-    PLANT,
-    "0x7b7496a6c48d9fb2e3654e0a6ebf945cb48e314eb0e574dd8b35feda056220de",
-  ),
-  "3:work": knownPay(
-    "Cleaning and inspection",
-    "0.03",
-    "Plant owner",
-    "Robot owner",
-    PLANT,
-    ROBOT_OWNER,
-    "0x5dd55bda4f926bfa19daf9ddd7683aa8648155d84634b0ab8065272d0e84d7e9",
-  ),
-  settlement: {
-    ok: true,
-    label: "Settlement",
-    amountPeaq: "0.1498",
-    fromName: "Plant owner",
-    toName: "Residents",
-    fromAddress: PLANT,
-    toAddress: CUSTOMERS,
-    txHash: "0xe36ca39cad2d37cdc69900a460cfa267c5209aa2d9cd19ae157660c9b296f6e7",
-    explorer: explorer("0xe36ca39cad2d37cdc69900a460cfa267c5209aa2d9cd19ae157660c9b296f6e7") ?? undefined,
-    steps: [
-      {
-        label: "Robot earnings into settlement",
-        amountPeaq: "0.0899",
-        fromName: "Robot owner",
-        toName: "Plant owner",
-        fromAddress: ROBOT_OWNER,
-        toAddress: PLANT,
-        txHash: "0xdd86458f99ae44622bcfaf1aa2262f22faf628a7cd9ca65d389e804c4d9e5d9b",
-        explorer: explorer("0xdd86458f99ae44622bcfaf1aa2262f22faf628a7cd9ca65d389e804c4d9e5d9b"),
-        ok: true,
-        error: null,
-      },
-      {
-        label: "Settlement",
-        amountPeaq: "0.1498",
-        fromName: "Plant owner",
-        toName: "Residents",
-        fromAddress: PLANT,
-        toAddress: CUSTOMERS,
-        txHash: "0xe36ca39cad2d37cdc69900a460cfa267c5209aa2d9cd19ae157660c9b296f6e7",
-        explorer: explorer("0xe36ca39cad2d37cdc69900a460cfa267c5209aa2d9cd19ae157660c9b296f6e7"),
-        ok: true,
-        error: null,
-      },
-    ],
-  },
-};
 
 export function settle(input: {
   id: string;

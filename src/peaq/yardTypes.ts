@@ -42,6 +42,8 @@ export type YardStatus = {
   operatorBalance: string;
   bondPeaq: string;
   blocker: string | null;
+  /** True when the server has no signing key and only replays confirmed receipts. */
+  readOnly?: boolean;
   writesLanded: boolean;
   machines: YardMachine[];
   people: YardPerson[];

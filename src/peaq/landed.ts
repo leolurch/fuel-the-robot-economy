@@ -1,4 +1,9 @@
 import type { TransferRow } from "../economy/types.ts";
+import { KNOWN_PEOPLE } from "./knownMachines.ts";
+import type { SettleResult } from "./yardTypes.ts";
+
+export const AGUNG_EXPLORER_TX = "https://agung-testnet.subscan.io/tx/";
+export const AGUNG_EXPLORER_ACCOUNT = "https://agung-testnet.subscan.io/account/";
 
 /** Payments already confirmed on Agung. Hashes were read from receipts, not invented. */
 export const LANDED_TRANSFERS: TransferRow[] = [
@@ -59,3 +64,138 @@ export const LANDED_TRANSFERS: TransferRow[] = [
     error: null,
   },
 ];
+
+const CUSTOMERS = KNOWN_PEOPLE.customers;
+const PLANT = KNOWN_PEOPLE.plantOwner;
+const ROBOT_OWNER = KNOWN_PEOPLE.robotOwner;
+const CITY = KNOWN_PEOPLE.city;
+
+function explorer(hash: string): string {
+  return `${AGUNG_EXPLORER_TX}${hash}`;
+}
+
+function knownPay(
+  label: string,
+  amountPeaq: string,
+  fromName: string,
+  toName: string,
+  fromAddress: `0x${string}`,
+  toAddress: `0x${string}`,
+  txHash: `0x${string}`,
+): SettleResult {
+  return {
+    ok: true,
+    label,
+    amountPeaq,
+    fromName,
+    toName,
+    fromAddress,
+    toAddress,
+    txHash,
+    explorer: explorer(txHash),
+  };
+}
+
+/** Receipts already confirmed on Agung. Returned as-is so a restarted writer does not send them again. */
+export const KNOWN_RECEIPTS: Record<string, SettleResult> = {
+  rent: knownPay(
+    "Apartment rent",
+    "0.05",
+    "Residents",
+    "City",
+    CUSTOMERS,
+    CITY,
+    "0x1a780caf5366661a95d23510608fd36fb3e60d7d939b6ca97412007a786dac76",
+  ),
+  "1:power": knownPay(
+    "Power",
+    "0.05",
+    "Residents",
+    "Plant owner",
+    CUSTOMERS,
+    PLANT,
+    "0x0942a7918570d833fe1461c46e05da4576648ef3066350ac3dc88ea8897febfc",
+  ),
+  "1:work": knownPay(
+    "Cleaning and inspection",
+    "0.03",
+    "Plant owner",
+    "Robot owner",
+    PLANT,
+    ROBOT_OWNER,
+    "0xb636c5d73105481104db2e75405fc6500f5e21e317d95171d0060f9a06877dd0",
+  ),
+  "2:power": knownPay(
+    "Power",
+    "0.05",
+    "Residents",
+    "Plant owner",
+    CUSTOMERS,
+    PLANT,
+    "0x4373fc71868d0e2ce35850f806b749bdf17b042afc880b170599d403e320706d",
+  ),
+  "2:work": knownPay(
+    "Cleaning and inspection",
+    "0.03",
+    "Plant owner",
+    "Robot owner",
+    PLANT,
+    ROBOT_OWNER,
+    "0x1f1c9a89c669f328271f5179e86d456fc8ab87418eafc30473a79e1a52ecbe00",
+  ),
+  "3:power": knownPay(
+    "Power",
+    "0.05",
+    "Residents",
+    "Plant owner",
+    CUSTOMERS,
+    PLANT,
+    "0x7b7496a6c48d9fb2e3654e0a6ebf945cb48e314eb0e574dd8b35feda056220de",
+  ),
+  "3:work": knownPay(
+    "Cleaning and inspection",
+    "0.03",
+    "Plant owner",
+    "Robot owner",
+    PLANT,
+    ROBOT_OWNER,
+    "0x5dd55bda4f926bfa19daf9ddd7683aa8648155d84634b0ab8065272d0e84d7e9",
+  ),
+  settlement: {
+    ok: true,
+    label: "Settlement",
+    amountPeaq: "0.1498",
+    fromName: "Plant owner",
+    toName: "Residents",
+    fromAddress: PLANT,
+    toAddress: CUSTOMERS,
+    txHash: "0xe36ca39cad2d37cdc69900a460cfa267c5209aa2d9cd19ae157660c9b296f6e7",
+    explorer: explorer("0xe36ca39cad2d37cdc69900a460cfa267c5209aa2d9cd19ae157660c9b296f6e7"),
+    steps: [
+      {
+        label: "Robot earnings into settlement",
+        amountPeaq: "0.0899",
+        fromName: "Robot owner",
+        toName: "Plant owner",
+        fromAddress: ROBOT_OWNER,
+        toAddress: PLANT,
+        txHash: "0xdd86458f99ae44622bcfaf1aa2262f22faf628a7cd9ca65d389e804c4d9e5d9b",
+        explorer: explorer("0xdd86458f99ae44622bcfaf1aa2262f22faf628a7cd9ca65d389e804c4d9e5d9b"),
+        ok: true,
+        error: null,
+      },
+      {
+        label: "Settlement",
+        amountPeaq: "0.1498",
+        fromName: "Plant owner",
+        toName: "Residents",
+        fromAddress: PLANT,
+        toAddress: CUSTOMERS,
+        txHash: "0xe36ca39cad2d37cdc69900a460cfa267c5209aa2d9cd19ae157660c9b296f6e7",
+        explorer: explorer("0xe36ca39cad2d37cdc69900a460cfa267c5209aa2d9cd19ae157660c9b296f6e7"),
+        ok: true,
+        error: null,
+      },
+    ],
+  },
+};

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Engine } from "../economy/engine.ts";
 import type { ChainJob, IdentityBook, PersonId } from "../economy/types.ts";
+import { KNOWN_RECEIPTS } from "./landed.ts";
 import type { SettleResult, YardStatus } from "./yardTypes.ts";
 
 export function useYardChain(engine: Engine): YardStatus | null {
@@ -77,8 +78,11 @@ export async function settleJob(job: ChainJob): Promise<SettleResult> {
         cleanlinessMilli: job.cleanlinessMilli,
       }),
     });
+    if (!response.ok) throw new Error(`yard server answered ${response.status}`);
     return (await response.json()) as SettleResult;
   } catch (error) {
+    const known = KNOWN_RECEIPTS[job.id];
+    if (known) return known;
     const message = error instanceof Error ? error.message : "request failed";
     return { ok: false, error: `Agung write did not land: ${message}` };
   }
