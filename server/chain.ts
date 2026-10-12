@@ -157,8 +157,8 @@ function knownMachines(): Row[] {
       did: known ? `did:peaq:${known.machineId}` : `did:peaq:${address}`,
       balance: "0",
       machineId: known?.machineId ?? null,
-      txHash: null,
-      explorer: null,
+      txHash: known?.activationTx ?? null,
+      explorer: known ? `https://agung-testnet.subscan.io/tx/${known.activationTx}` : null,
       error: null,
       account: null,
     };

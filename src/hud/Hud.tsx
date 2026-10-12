@@ -375,7 +375,9 @@ function WalletCard({ id, snap, yard }: { id: ActorId; snap: Snapshot; yard: Yar
   const wallet = snap.wallets[id];
   const machine = yard?.machines.find((item) => item.actor === id);
   const address = machine && !/^0x0{40}$/.test(machine.address) ? machine.address : wallet.address;
-  const machineId = machine?.machineId ?? KNOWN_MACHINES.find((item) => item.actor === id)?.machineId ?? null;
+  const known = KNOWN_MACHINES.find((item) => item.actor === id);
+  const machineId = machine?.machineId ?? known?.machineId ?? null;
+  const activation = machine?.explorer ?? (known ? `${AGUNG_EXPLORER_TX}${known.activationTx}` : null);
   const hot = roleFor(snap.flow, id) !== null;
   return (
     <article className={`min-w-0 overflow-hidden rounded-2xl p-3 ${emphasisClass(snap.flow, id)}`}>
@@ -386,13 +388,16 @@ function WalletCard({ id, snap, yard }: { id: ActorId; snap: Snapshot; yard: Yar
         <span className={`ml-1 text-sm font-medium ${hot ? "text-slate-800" : "text-amber-200"}`}>PEAQ</span>
       </p>
       {machineId ? (
-        <p
-          className={`mt-1.5 flex min-w-0 items-center gap-1.5 font-mono text-xs ${hot ? "text-slate-800" : "text-emerald-200"}`}
-          title={`MachineRegistry ID ${machineId}`}
+        <a
+          className={`mt-1.5 flex min-w-0 items-center gap-1.5 font-mono text-xs hover:underline ${hot ? "text-slate-800" : "text-emerald-200"}`}
+          title={`MachineRegistry ID ${machineId}. Opens the activation transaction.`}
+          href={activation ?? undefined}
+          target="_blank"
+          rel="noreferrer"
         >
           <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${hot ? "bg-slate-800" : "bg-emerald-300"}`} />
           <span className="truncate">Machine ID {shortAddress(machineId)}</span>
-        </p>
+        </a>
       ) : machine?.error ? (
         <p className="mt-1 line-clamp-2 text-xs leading-snug text-rose-200">{machine.error}</p>
       ) : null}
@@ -616,7 +621,7 @@ function HowItWorks({ open, onClose }: { open: boolean; onClose: () => void }) {
           <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">Real on peaq Agung</h3>
           <ul className="mt-2 list-disc space-y-1.5 pl-5 marker:text-emerald-300/70">
             <li>Four machine IDs in MachineRegistry, activated with the peaq SDK: the plant treasury, Kepler-01, Lumen-04, and BESS-2.</li>
-            <li>Twelve PEAQ transfers with receipts: rent, power, robot pay, wages, recharge, and the settlement. Every hash links to Subscan.</li>
+            <li>Four activation transactions and twelve PEAQ transfers with receipts: rent, power, robot pay, wages, recharge, and the settlement. Machine IDs and hashes link to Subscan.</li>
             <li>Live reads of the chain id, current block, and contract bytecode, straight from the public Agung RPC.</li>
             <li>
               <code className="rounded bg-white/10 px-1 font-mono text-sm">npm run verify</code> recomputes the machine IDs and checks every receipt.

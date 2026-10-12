@@ -48,13 +48,14 @@ for (const machine of KNOWN_MACHINES) {
 }
 
 const hashes = new Map<string, string>();
+for (const machine of KNOWN_MACHINES) hashes.set(machine.activationTx, `activateMachine ${machine.machineType}`);
 for (const row of LANDED_TRANSFERS) if (row.hash) hashes.set(row.hash, `${row.label} ${row.fromName} → ${row.toName}`);
 for (const result of Object.values(KNOWN_RECEIPTS)) {
   if (result.txHash) hashes.set(result.txHash, `${result.label} ${result.fromName} → ${result.toName}`);
   for (const step of result.steps ?? []) if (step.txHash) hashes.set(step.txHash, `${step.label} ${step.fromName} → ${step.toName}`);
 }
 
-console.log(`\nPayment receipts (${hashes.size})`);
+console.log(`\nActivation and payment receipts (${hashes.size})`);
 for (const [hash, label] of hashes) {
   try {
     const [receipt, tx] = await Promise.all([

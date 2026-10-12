@@ -27,23 +27,23 @@ This is the listing's "two machines, one deal" idea (a robot paying a charger) i
 | **12 PEAQ transfers with receipts**: rent, power, robot pay, wash wage, inspection fee, recharge, and the settlement. Every hash links to [Subscan](https://agung-testnet.subscan.io) | Without a funded key, the page replays those receipts instead of sending new ones |
 | Live reads: chain id, current block, MachineRegistry, DID precompile, and EventRegistry bytecode, plus wallet balances over the public RPC | Lumen's **activity event is not on chain**: Agung's EventRegistry reverts the call (see below) |
 
-Do not take the labels on trust:
+The four `activateMachine` transactions are linked below and from each machine card. Do not take the labels on trust:
 
 ```bash
 npm run verify
 ```
 
-This recomputes each machine ID with the peaq SDK, checks that MachineRegistry reports the operator as owner, and fetches every receipt from Agung.
+This recomputes each machine ID with the peaq SDK, checks that MachineRegistry reports the operator as owner, and fetches all 16 receipts (4 activations, 12 payments) from Agung.
 
 <details>
 <summary>Machine IDs and a few receipts</summary>
 
-| Machine | Address | MachineRegistry ID |
-| --- | --- | --- |
-| Rheinau treasury | [`0x90f7…575C`](https://agung-testnet.subscan.io/account/0x90f700f3645b7d062b4520fEcB12E7a1Db0F575C) | `102441207943741495815144671880889482642676067611685166339896603723990339550998` |
-| Kepler-01 (rover) | [`0x8D63…b77E`](https://agung-testnet.subscan.io/account/0x8D63581101AD3DE66DCF1c2Ab569B6c442e2b77E) | `108602975430599403666987812419548965340727236481014319489660215287370279879996` |
-| Lumen-04 (drone) | [`0x4264…F138`](https://agung-testnet.subscan.io/account/0x42647B681D98961A45f4fc6e4Bc5F5d56892F138) | `88409303619999558588125362065661591412349648541783424028499915752405324092273` |
-| BESS-2 (battery) | [`0x0fF7…b943`](https://agung-testnet.subscan.io/account/0x0fF7df529aD2C19DF6637a8b1C148C268C3Eb943) | `106466828269666555797166757514327820279976210156543034156017671456103315692484` |
+| Machine | Address | MachineRegistry ID | Activation |
+| --- | --- | --- | --- |
+| Rheinau treasury | [`0x90f7…575C`](https://agung-testnet.subscan.io/account/0x90f700f3645b7d062b4520fEcB12E7a1Db0F575C) | `102441207943741495815144671880889482642676067611685166339896603723990339550998` | [`0x03ce…ad78`](https://agung-testnet.subscan.io/tx/0x03cebbe41c47450d51ecbf48a76e219112692b50eeceb8b143af15a13428ad78) |
+| Kepler-01 (rover) | [`0x8D63…b77E`](https://agung-testnet.subscan.io/account/0x8D63581101AD3DE66DCF1c2Ab569B6c442e2b77E) | `108602975430599403666987812419548965340727236481014319489660215287370279879996` | [`0x5b0b…836c`](https://agung-testnet.subscan.io/tx/0x5b0b19e25dbaa639c91d938c85def41956c7974b38d81bd90d6f03cb3933836c) |
+| Lumen-04 (drone) | [`0x4264…F138`](https://agung-testnet.subscan.io/account/0x42647B681D98961A45f4fc6e4Bc5F5d56892F138) | `88409303619999558588125362065661591412349648541783424028499915752405324092273` | [`0x8e3b…efdf`](https://agung-testnet.subscan.io/tx/0x8e3bd0dd6ec7733e2f365a54f0e6da94b659ae70801333b77fe5d8230662efdf) |
+| BESS-2 (battery) | [`0x0fF7…b943`](https://agung-testnet.subscan.io/account/0x0fF7df529aD2C19DF6637a8b1C148C268C3Eb943) | `106466828269666555797166757514327820279976210156543034156017671456103315692484` | [`0xda47…55f8`](https://agung-testnet.subscan.io/tx/0xda4782a80e5f94269cd82342d68e420abdb976314dfe936ac409e994646255f8) |
 
 - Kepler-01 pays BESS-2 for a recharge: [`0xf27f…ec1c`](https://agung-testnet.subscan.io/tx/0xf27f9652c6af53f31f4fae33a1764cbb12f3fb57b1991b090f8fdfd9d1ecec1c)
 - Treasury pays Kepler-01 the wash wage: [`0xfb92…1164`](https://agung-testnet.subscan.io/tx/0xfb92dc648fdb91f668842e3d813c46cf3ac6e7fe3973d0e6d69408b31c2e1164)
