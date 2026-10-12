@@ -1,6 +1,6 @@
 export type ActorId = "treasury" | "robot" | "drone" | "battery";
 
-export type PersonId = "customers" | "plantOwner" | "robotOwner" | "city";
+export type PersonId = "city" | "plantOwner" | "robotOwner" | "drain";
 
 export type PartyId = ActorId | PersonId;
 
@@ -27,7 +27,7 @@ export type Flow = {
 
 export type LogKind = "info" | "pay" | "proof" | "energy";
 
-export type ChainKind = "power" | "work" | "settlement" | "rent" | "recharge";
+export type ChainKind = "fund" | "power" | "work" | "recharge" | "settlement";
 
 export type TransferRow = {
   id: string;

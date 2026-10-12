@@ -1,11 +1,12 @@
 import type { ActorId, PersonId } from "../economy/types.ts";
 
-/** Operator key that activated the yard machines and signed the landed transfers on Agung. */
-export const YARD_OPERATOR = "0x90f700f3645b7d062b4520fEcB12E7a1Db0F575C" as const;
+/** Operator key that activated the yard machines on Agung. Its wallet is the Drain that funds every run. */
+export const YARD_OPERATOR = "0x8a61248e23e04b97A0A42A87D09459573478d23A" as const;
 
 /**
  * Machines already activated on Agung by the yard operator. `npm run verify` recomputes each
  * machine ID with the peaq SDK and checks the registry owner, so these are not trusted blindly.
+ * The battery was registered with machine type "BESS-2"; the yard calls it Battery.
  */
 export const KNOWN_MACHINES: {
   actor: ActorId;
@@ -18,36 +19,36 @@ export const KNOWN_MACHINES: {
     actor: "treasury",
     machineType: "Rheinau-treasury",
     address: YARD_OPERATOR,
-    machineId: "102441207943741495815144671880889482642676067611685166339896603723990339550998",
-    activationTx: "0x03cebbe41c47450d51ecbf48a76e219112692b50eeceb8b143af15a13428ad78",
+    machineId: "33972125727311862102242550464936382332590305066238494161796118837764432459771",
+    activationTx: "0xec8a622a893f77ed675902751ea196e5336ad11339a0bd3fc34e50f6d33c1859",
   },
   {
     actor: "robot",
     machineType: "Kepler-01",
-    address: "0x8D63581101AD3DE66DCF1c2Ab569B6c442e2b77E",
-    machineId: "108602975430599403666987812419548965340727236481014319489660215287370279879996",
-    activationTx: "0x5b0b19e25dbaa639c91d938c85def41956c7974b38d81bd90d6f03cb3933836c",
+    address: "0xa3893E09F5546B56B6e845ad194e28a216730931",
+    machineId: "1962884760408859527843867200144780974073261720970703856069487751650844150575",
+    activationTx: "0xde6ee8f2b2b2b6154034bb7ea763865c9616241a61484a284dabedaa0517b990",
   },
   {
     actor: "drone",
     machineType: "Lumen-04",
-    address: "0x42647B681D98961A45f4fc6e4Bc5F5d56892F138",
-    machineId: "88409303619999558588125362065661591412349648541783424028499915752405324092273",
-    activationTx: "0x8e3bd0dd6ec7733e2f365a54f0e6da94b659ae70801333b77fe5d8230662efdf",
+    address: "0x77cc0A6aeA9F14c842251aE1384E45A3F30320d9",
+    machineId: "70771729342491203195750444655678312409844457848436599576321158744592664857524",
+    activationTx: "0xd25a7b8a143b87a9ee0418d5b1370c75f902f1367f890d367535a0390030b671",
   },
   {
     actor: "battery",
     machineType: "BESS-2",
-    address: "0x0fF7df529aD2C19DF6637a8b1C148C268C3Eb943",
-    machineId: "106466828269666555797166757514327820279976210156543034156017671456103315692484",
-    activationTx: "0xda4782a80e5f94269cd82342d68e420abdb976314dfe936ac409e994646255f8",
+    address: "0x6F8A86803dafE766F6381F781D5003BC5aa2df5d",
+    machineId: "23561826428746862383207998597570184258462227245211301004858601842139846427384",
+    activationTx: "0xae8de92ad5772c5d0fb4084316917235325b0e6c5200cfe12aa2065c666edcf5",
   },
 ];
 
-/** Owner wallets derived from the operator key. They signed the rent, power, work, and settlement receipts. */
+/** Wallets derived from the operator key. The Drain is the operator itself. */
 export const KNOWN_PEOPLE: Record<PersonId, `0x${string}`> = {
-  customers: YARD_OPERATOR,
-  plantOwner: "0xc04DFd51d21d62B5915Ec01B821260367053b1cC",
-  robotOwner: "0xDe7cCd73d2054DC2820BacbBFAa514F30d9467DD",
-  city: "0x0dF74639f0adEaDCdc1BFc37ee0Ac60933db4A1E",
+  city: "0x0f6213A1f06eCDE70823EAb4132f89a0bFd83Fd6",
+  plantOwner: "0x130B2111C24e55B03918CAe018F4C0fABFDe2EaB",
+  robotOwner: "0x84AFCdE8e20c78189Cb792af78901ead5c364a81",
+  drain: YARD_OPERATOR,
 };

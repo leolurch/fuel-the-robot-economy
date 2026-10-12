@@ -17,8 +17,10 @@ import {
   PERSON_OPENING_CENTS,
   PHASES,
   PLANT_EARN_CENTS,
+  CITY_BUDGET_CENTS,
+  KEPLER_BUDGET_CENTS,
   POWER_CENTS,
-  RENT_CENTS,
+  RUN_BUDGET_CENTS,
   RUN_CYCLES,
   TARIFF,
   WORK_CENTS,
@@ -59,15 +61,12 @@ fast.setSpeed(4);
 runUntil(fast, 2);
 const once = fast.snapshot();
 assert(once.phase === "soil", `expected soil at cycle 2, got ${once.phase}`);
-assert(
-  once.people.customers.balanceCents === PERSON_OPENING_CENTS.customers - RENT_CENTS - POWER_CENTS,
-  `customers ${once.people.customers.balanceCents}`,
-);
-assert(once.people.city.balanceCents === RENT_CENTS, `city ${once.people.city.balanceCents}`);
+assert(once.people.drain.balanceCents === PERSON_OPENING_CENTS.drain - RUN_BUDGET_CENTS, `drain ${once.people.drain.balanceCents}`);
+assert(once.people.city.balanceCents === CITY_BUDGET_CENTS - POWER_CENTS, `city ${once.people.city.balanceCents}`);
 expectNet("plant", once.people.plantOwner.balanceCents, PERSON_OPENING_CENTS.plantOwner, PLANT_EARN_CENTS, 1);
 expectNet("robot owner", once.people.robotOwner.balanceCents, PERSON_OPENING_CENTS.robotOwner, WORK_CENTS, 1);
 expectNet("treasury", once.wallets.treasury.balanceCents, OPENING_CENTS.treasury, 0, 1);
-expectNet("robot", once.wallets.robot.balanceCents, OPENING_CENTS.robot, -TARIFF.rechargeCents, 1);
+expectNet("robot", once.wallets.robot.balanceCents, OPENING_CENTS.robot + KEPLER_BUDGET_CENTS, -TARIFF.rechargeCents, 1);
 expectNet("drone", once.wallets.drone.balanceCents, OPENING_CENTS.drone, 0, 1);
 expectNet("battery", once.wallets.battery.balanceCents, OPENING_CENTS.battery, TARIFF.rechargeCents, 1);
 assert(once.robotBattery > 0.9, `battery not recharged: ${once.robotBattery}`);
@@ -77,11 +76,11 @@ assert(
   once.proofHash === computeDataHash(inspectionPayload(1, once.cleanlinessMilli)),
   "proof hash drifted from peaq computeDataHash",
 );
-assert(once.events.some((event) => event.text.includes("Residents pay the city")), "missing apartment rent");
-assert(once.events.some((event) => event.text.includes("Residents pay the plant owner")), "missing power payment");
-assert(once.chainJobs.some((job) => job.kind === "rent"), "missing rent job");
+assert(once.events.some((event) => event.text.includes("The Drain funds the run")), "missing run funding");
+assert(once.events.some((event) => event.text.includes("The city pays the plant owner")), "missing power payment");
+assert(once.chainJobs.some((job) => job.kind === "fund"), "missing fund job");
 assert(once.events.some((event) => event.text.includes("pays the robot owner")), "missing robot-owner payment");
-assert(once.events.some((event) => event.text.includes("pays BESS-2")), "missing recharge payment");
+assert(once.events.some((event) => event.text.includes("pays the Battery")), "missing recharge payment");
 assert(once.chainJobs.some((job) => job.kind === "power"), "missing power job");
 assert(once.chainJobs.some((job) => job.kind === "work"), "missing work job");
 assert(once.events.some((event) => event.kind === "energy"), "missing refill");
@@ -99,7 +98,7 @@ const ids: ActorId[] = ["treasury", "robot", "drone", "battery"];
 for (const id of ids) {
   assert(opened.wallets[id].balanceCents === OPENING_CENTS[id], `reset ${id}`);
 }
-assert(opened.people.customers.balanceCents === PERSON_OPENING_CENTS.customers, "reset customers");
+assert(opened.people.drain.balanceCents === PERSON_OPENING_CENTS.drain, "reset drain");
 
 const steady = new Engine();
 let guard = 0;
@@ -112,15 +111,15 @@ while (!closed.runComplete) {
 }
 assert(closed.cycle === RUN_CYCLES, `run stopped on cycle ${closed.cycle}`);
 assert(closed.paused, "run should hold after settlement");
-assert(
-  closed.people.customers.balanceCents === PERSON_OPENING_CENTS.customers - RENT_CENTS,
-  "apartment rent did not stay with the city",
-);
-assert(closed.people.city.balanceCents === RENT_CENTS, "city did not keep the rent");
-assert(closed.people.plantOwner.balanceCents === 0, "plant owner still holds earnings");
-assert(closed.people.robotOwner.balanceCents === 0, "robot owner still holds earnings");
+assert(closed.people.drain.balanceCents === PERSON_OPENING_CENTS.drain, `drain did not get the run back: ${closed.people.drain.balanceCents}`);
+for (const id of ["city", "plantOwner", "robotOwner"] as const) {
+  assert(closed.people[id].balanceCents === 0, `${id} still holds ${closed.people[id].balanceCents}`);
+}
+for (const id of ["robot", "battery"] as const) {
+  assert(closed.wallets[id].balanceCents === 0, `${id} still holds ${closed.wallets[id].balanceCents}`);
+}
 assert(closed.chainJobs.some((job) => job.kind === "settlement"), "missing settlement job");
-assert(closed.events.some((event) => event.text.includes("Settlement bundles")), "missing settlement log");
+assert(closed.events.some((event) => event.text.includes("back to the Drain")), "missing settlement log");
 
 const gaps = clearanceProblems();
 assert(gaps.length === 0, gaps.slice(0, 6).join(" | ") || "clearance");

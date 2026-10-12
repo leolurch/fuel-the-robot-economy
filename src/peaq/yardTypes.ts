@@ -53,6 +53,7 @@ export type YardStatus = {
 };
 
 export type SettleStep = {
+  id: string;
   label: string;
   amountPeaq: string;
   fromName: string;
@@ -67,8 +68,6 @@ export type SettleStep = {
 
 export type SettleResult = {
   ok: boolean;
-  /** Nothing to show for this job, e.g. a recharge in read-only mode, where the landed recharge receipt is listed instead. */
-  skipped?: boolean;
   error?: string;
   txHash?: string;
   explorer?: string;

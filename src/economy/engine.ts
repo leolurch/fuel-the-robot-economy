@@ -18,6 +18,8 @@ import {
   INVENTORY_CAP,
   INVENTORY_FULL,
   NAMEPLATE_KW,
+  CITY_BUDGET_CENTS,
+  KEPLER_BUDGET_CENTS,
   OPENING_CENTS,
   PERSON_META,
   PERSON_OPENING_CENTS,
@@ -25,7 +27,6 @@ import {
   PLANT_EARN_CENTS,
   inspectionLine,
   POWER_CENTS,
-  RENT_CENTS,
   RUN_CYCLES,
   TARIFF,
   WORK_CENTS,
@@ -97,11 +98,13 @@ function freshFlags(): Flags {
   };
 }
 
+const PERSON_IDS: PersonId[] = ["city", "plantOwner", "robotOwner", "drain"];
+
 const DEFAULT_PEOPLE: Record<PersonId, { address: `0x${string}` }> = {
-  customers: { address: KNOWN_PEOPLE.customers },
+  city: { address: KNOWN_PEOPLE.city },
   plantOwner: { address: KNOWN_PEOPLE.plantOwner },
   robotOwner: { address: KNOWN_PEOPLE.robotOwner },
-  city: { address: KNOWN_PEOPLE.city },
+  drain: { address: KNOWN_PEOPLE.drain },
 };
 
 export function inspectionPayload(cycle: number, cleanlinessMilli: number): Uint8Array {
@@ -164,7 +167,7 @@ export class Engine {
   private wallets: Record<ActorId, Wallet>;
   private people: Record<PersonId, Wallet>;
   private personAddresses: Record<PersonId, { address: `0x${string}` }> = { ...DEFAULT_PEOPLE };
-  private rentSent = false;
+  private funded = false;
   private transfers: TransferRow[] = [];
   private flags: Flags = freshFlags();
   private listeners = new Set<(snapshot: Snapshot) => void>();
@@ -227,8 +230,7 @@ export class Engine {
 
   setPeople(addresses: Record<PersonId, { address: `0x${string}` }>): void {
     this.personAddresses = addresses;
-    const ids: PersonId[] = ["customers", "plantOwner", "robotOwner", "city"];
-    for (const id of ids) {
+    for (const id of PERSON_IDS) {
       this.people[id].address = addresses[id].address;
     }
     this.emit();
@@ -278,7 +280,7 @@ export class Engine {
     this.events = [];
     this.eventId = 0;
     this.transfers = [];
-    this.rentSent = false;
+    this.funded = false;
     this.wallets = this.openingWallets();
     this.people = this.openingPeople();
     this.rowDirt = Array.from({ length: ROW_COUNT }, () => CLEAN_DIRT);
@@ -317,10 +319,10 @@ export class Engine {
         battery: { ...this.wallets.battery },
       },
       people: {
-        customers: { ...this.people.customers },
+        city: { ...this.people.city },
         plantOwner: { ...this.people.plantOwner },
         robotOwner: { ...this.people.robotOwner },
-        city: { ...this.people.city },
+        drain: { ...this.people.drain },
       },
       transfers: this.transfers.map((row) => ({ ...row })),
       daylight: this.daylight,
@@ -363,9 +365,8 @@ export class Engine {
   }
 
   private openingPeople(): Record<PersonId, Wallet> {
-    const ids: PersonId[] = ["customers", "plantOwner", "robotOwner", "city"];
     const people = {} as Record<PersonId, Wallet>;
-    for (const id of ids) {
+    for (const id of PERSON_IDS) {
       const meta = PERSON_META[id];
       const who = this.personAddresses[id] ?? DEFAULT_PEOPLE[id];
       people[id] = {
@@ -375,19 +376,14 @@ export class Engine {
         address: who.address,
         did: "",
         balanceCents: PERSON_OPENING_CENTS[id],
-        lastTx:
-          id === "customers"
-            ? "Pays the city for the apartments"
-            : id === "city"
-              ? "Waiting for apartment rent"
-              : "Waiting for the first payment",
+        lastTx: id === "drain" ? "Holds the budget for this run" : "Waiting for the first payment",
       };
     }
     return people;
   }
 
   private party(id: PartyId): Wallet {
-    if (id === "customers" || id === "plantOwner" || id === "robotOwner" || id === "city") return this.people[id];
+    if (id === "city" || id === "plantOwner" || id === "robotOwner" || id === "drain") return this.people[id];
     return this.wallets[id];
   }
 
@@ -438,7 +434,7 @@ export class Engine {
       } else {
         this.log(
           "info",
-          "Rheinau runs three compressed days. Customers buy the power, the plant pays the robot owner, and the rover still recharges.",
+          "Rheinau runs three compressed days. The Drain funds the run, the city buys the power, the plant pays the robot owner, and the rover recharges.",
         );
       }
       this.log(
@@ -464,17 +460,17 @@ export class Engine {
     } else if (phase === "pay") {
       this.log(
         "info",
-        "Customers pay the plant owner for the day's power. The plant owner pays the robot owner for Kepler and Lumen.",
+        "The city pays the plant owner for the day's power. The plant owner pays the robot owner for Kepler and Lumen.",
       );
     } else if (phase === "recharge") {
       this.log(
         "info",
-        "Kepler's battery is low. It drives to BESS-2 to buy a recharge with its wages.",
+        "Kepler's battery is low. It drives to the Battery to buy a recharge.",
       );
     } else if (phase === "refill") {
       this.log(
         "energy",
-        `The plant refills BESS-2 with ${TARIFF.rechargeKwh} kWh from generation. The pack's wallet does not move; it already rose on the sale.`,
+        `The plant refills the Battery with ${TARIFF.rechargeKwh} kWh from generation. The pack's wallet does not move; it already rose on the sale.`,
       );
     }
   }
@@ -495,7 +491,7 @@ export class Engine {
       this.roverCmd = "idle";
       this.droneCmd = "loiter";
       this.placeDroneLoiter();
-      this.applyRent(progress);
+      this.applyFund(progress);
     } else if (phase === "survey") {
       this.applySurvey(progress);
     } else if (phase === "wash") {
@@ -519,31 +515,48 @@ export class Engine {
     }
   }
 
-  private applyRent(progress: number): void {
+  private applyFund(progress: number): void {
     if (this.cycle !== 1) return;
-    if (!this.rentSent && progress >= 0.18) {
-      this.rentSent = true;
+    if (!this.funded && progress >= 0.18) {
+      this.funded = true;
       this.move(
-        "customers",
+        "drain",
         "city",
-        RENT_CENTS,
-        `Sent ${formatPeaq(RENT_CENTS)} PEAQ to the city`,
-        `Received ${formatPeaq(RENT_CENTS)} PEAQ apartment rent`,
+        CITY_BUDGET_CENTS,
+        `Sent ${formatPeaq(CITY_BUDGET_CENTS)} PEAQ to the city`,
+        `Received ${formatPeaq(CITY_BUDGET_CENTS)} PEAQ for three days of power`,
       );
-      this.enqueue("rent");
+      this.move(
+        "drain",
+        "robot",
+        KEPLER_BUDGET_CENTS,
+        `Sent ${formatPeaq(KEPLER_BUDGET_CENTS)} PEAQ to Kepler-01`,
+        `Received ${formatPeaq(KEPLER_BUDGET_CENTS)} PEAQ for three recharges`,
+      );
+      this.people.drain.lastTx = `Yard ledger: funded the run with ${formatPeaq(CITY_BUDGET_CENTS + KEPLER_BUDGET_CENTS)} PEAQ`;
+      this.enqueue("fund");
       this.log(
         "pay",
-        `Residents pay the city ${formatPeaq(RENT_CENTS)} PEAQ for their apartments, so the city can buy the plant's energy again.`,
+        `The Drain funds the run: ${formatPeaq(CITY_BUDGET_CENTS)} PEAQ to the city for three days of power, and ${formatPeaq(KEPLER_BUDGET_CENTS)} PEAQ to Kepler-01 for three recharges.`,
       );
     }
-    if (progress >= 0.12 && progress < 0.96) {
+    if (progress >= 0.12 && progress < 0.56) {
       this.flow = {
         kind: "pay",
-        from: "customers",
+        from: "drain",
         to: "city",
-        amountCents: RENT_CENTS,
-        label: "Apartment rent",
-        progress: (progress - 0.12) / 0.84,
+        amountCents: CITY_BUDGET_CENTS,
+        label: "Power budget",
+        progress: (progress - 0.12) / 0.44,
+      };
+    } else if (progress >= 0.56 && progress < 0.98) {
+      this.flow = {
+        kind: "pay",
+        from: "drain",
+        to: "robot",
+        amountCents: KEPLER_BUDGET_CENTS,
+        label: "Recharge budget",
+        progress: (progress - 0.56) / 0.42,
       };
     }
   }
@@ -647,7 +660,7 @@ export class Engine {
       const short = `${this.proofHash.slice(0, 10)}…${this.proofHash.slice(-4)}`;
       this.log(
         "proof",
-        `Lumen-04 verified cleanliness at ${pct}%. Proof ${short}. The customers pay the plant owner for this power.`,
+        `Lumen-04 verified cleanliness at ${pct}%. Proof ${short}. The city pays the plant owner for this power.`,
       );
     }
     if (progress >= 0.72) {
@@ -666,16 +679,16 @@ export class Engine {
     if (!this.flags.paidPower && progress >= 0.22) {
       this.flags.paidPower = true;
       this.move(
-        "customers",
+        "city",
         "plantOwner",
         POWER_CENTS,
         `Sent ${formatPeaq(POWER_CENTS)} PEAQ to the plant owner`,
-        `Received ${formatPeaq(POWER_CENTS)} PEAQ from the customers`,
+        `Received ${formatPeaq(POWER_CENTS)} PEAQ from the city`,
       );
       this.enqueue("power");
       this.log(
         "pay",
-        `Residents pay the plant owner ${formatPeaq(POWER_CENTS)} PEAQ for the day's power.`,
+        `The city pays the plant owner ${formatPeaq(POWER_CENTS)} PEAQ for the day's power.`,
       );
     }
     if (!this.flags.paidWork && progress >= 0.58) {
@@ -696,7 +709,7 @@ export class Engine {
     if (progress >= 0.22 && progress < 0.56) {
       this.flow = {
         kind: "pay",
-        from: "customers",
+        from: "city",
         to: "plantOwner",
         amountCents: POWER_CENTS,
         label: "Power",
@@ -739,13 +752,13 @@ export class Engine {
         "robot",
         "battery",
         TARIFF.rechargeCents,
-        `Sent ${formatPeaq(TARIFF.rechargeCents)} PEAQ to BESS-2`,
+        `Sent ${formatPeaq(TARIFF.rechargeCents)} PEAQ to the Battery`,
         `Received ${formatPeaq(TARIFF.rechargeCents)} PEAQ from Kepler`,
       );
       this.enqueue("recharge");
       this.log(
         "pay",
-        `Kepler-01 pays BESS-2 ${formatPeaq(TARIFF.rechargeCents)} PEAQ for ${TARIFF.rechargeKwh} kWh and rolls back out with a full pack.`,
+        `Kepler-01 pays the Battery ${formatPeaq(TARIFF.rechargeCents)} PEAQ for ${TARIFF.rechargeKwh} kWh and rolls back out with a full pack.`,
       );
     }
     if (progress >= 0.5 && progress < 0.82) {
@@ -802,32 +815,29 @@ export class Engine {
     this.paused = true;
     this.phase = "refill";
     this.phaseIndex = PHASES.length - 1;
-    const plantEarned = this.people.plantOwner.balanceCents;
-    const robotEarned = this.people.robotOwner.balanceCents;
-    const bundled = plantEarned + robotEarned;
-    if (plantEarned > 0) {
-      this.people.plantOwner.balanceCents = 0;
-      this.people.customers.balanceCents += plantEarned;
+    const sources: PartyId[] = ["plantOwner", "robotOwner", "battery", "robot", "city"];
+    let returned = 0;
+    for (const id of sources) {
+      const wallet = this.party(id);
+      if (wallet.balanceCents <= 0) continue;
+      returned += wallet.balanceCents;
+      wallet.balanceCents = 0;
+      wallet.lastTx = "Returned its balance to the Drain";
     }
-    if (robotEarned > 0) {
-      this.people.robotOwner.balanceCents = 0;
-      this.people.customers.balanceCents += robotEarned;
-    }
-    this.people.customers.lastTx = `Settlement returns ${formatPeaq(bundled)} PEAQ`;
-    this.people.plantOwner.lastTx = "Earnings returned to the customers";
-    this.people.robotOwner.lastTx = "Earnings returned to the customers";
+    this.people.drain.balanceCents += returned;
+    this.people.drain.lastTx = `Collected ${formatPeaq(returned)} PEAQ for the next run`;
     this.flow = {
       kind: "pay",
       from: "plantOwner",
-      to: "customers",
-      amountCents: bundled,
-      label: "Settlement",
+      to: "drain",
+      amountCents: returned,
+      label: "Back to the Drain",
       progress: 1,
     };
     this.enqueue("settlement");
     this.log(
       "pay",
-      `Settlement bundles ${formatPeaq(bundled)} PEAQ from the plant owner and the robot owner and sends it back to the customers.`,
+      `Settlement: the plant owner, the robot owner, and the Battery send ${formatPeaq(returned)} PEAQ back to the Drain, ready for the next run.`,
     );
     this.emit();
   }
@@ -842,7 +852,7 @@ export class Engine {
   }
 
   private enqueue(kind: ChainKind): void {
-    const id = kind === "settlement" || kind === "rent" ? kind : `${this.cycle}:${kind}`;
+    const id = kind === "settlement" || kind === "fund" ? kind : `${this.cycle}:${kind}`;
     if (this.chainJobs.some((job) => job.id === id)) return;
     this.chainJobs.push({
       id,

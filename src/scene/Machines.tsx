@@ -7,7 +7,7 @@ import { formatPeaq } from "../economy/model.ts";
 import type { PartyId } from "../economy/types.ts";
 import { inspectionLine } from "../economy/model.ts";
 import { ACTIVITY_STATUS } from "../peaq/activityStatus.ts";
-import { BESS_POS, CITY_POS, CUSTOMER_POS, DRONE_ALT, FIELD_X, FIELD_Z, PLANT_OWNER_POS, ROBOT_OWNER_POS, TREASURY_POS } from "../world/layout.ts";
+import { BESS_POS, CITY_POS, DRAIN_POS, DRONE_ALT, FIELD_X, FIELD_Z, PLANT_OWNER_POS, ROBOT_OWNER_POS, TREASURY_POS } from "../world/layout.ts";
 import { droneBodyGeometry, robotBodyGeometry } from "./yardMesh.ts";
 
 const up = new THREE.Vector3(0, 1, 0);
@@ -184,7 +184,7 @@ export function BatteryPack({ engine }: { engine: Engine }) {
       <Html position={[0, 2.55, 0]} center distanceFactor={11} zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
         <div className="whitespace-nowrap rounded-full bg-slate-950/85 px-2 py-1 text-[13px] font-semibold text-white">
           <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-teal-300" />
-          BESS-2 · <span ref={kwhLabel}>{Math.round(engine.inventoryKwh)} kWh</span>
+          Battery · <span ref={kwhLabel}>{Math.round(engine.inventoryKwh)} kWh</span>
         </div>
       </Html>
     </group>
@@ -220,7 +220,7 @@ function placeActor(id: PartyId, target: THREE.Vector3, engine: Engine): void {
   if (id === "robot") target.set(engine.robot.x, 1.15, engine.robot.z);
   else if (id === "drone") target.set(engine.drone.x, 2.4, engine.drone.z);
   else if (id === "battery") target.set(BESS_POS.x, 1.7, BESS_POS.z);
-  else if (id === "customers") target.set(CUSTOMER_POS.x, 1.35, CUSTOMER_POS.z);
+  else if (id === "drain") target.set(DRAIN_POS.x, 1.35, DRAIN_POS.z);
   else if (id === "robotOwner") target.set(ROBOT_OWNER_POS.x, 1.35, ROBOT_OWNER_POS.z);
   else if (id === "city") target.set(CITY_POS.x, 2.4, CITY_POS.z);
   else if (id === "plantOwner") target.set(PLANT_OWNER_POS.x, 1.35, PLANT_OWNER_POS.z);
@@ -234,7 +234,9 @@ export function People({ engine }: { engine: Engine }) {
     const flow = engine.flow;
     const text =
       flow && flow.kind === "pay"
-        ? `${nameFor(flow.from)} ${flow.from === "customers" ? "pay" : "pays"} ${nameFor(flow.to)}`
+        ? engine.runComplete
+          ? "Everything goes back to the Drain"
+          : `${nameFor(flow.from)} pays ${nameFor(flow.to)}`
         : "";
     if (label.current && last.current !== text) {
       last.current = text;
@@ -244,7 +246,7 @@ export function People({ engine }: { engine: Engine }) {
   });
   return (
     <group>
-      <Marker engine={engine} id="customers" position={[CUSTOMER_POS.x, 0, CUSTOMER_POS.z]} color="#c4b5fd" label="Residents" />
+      <Marker engine={engine} id="drain" position={[DRAIN_POS.x, 0, DRAIN_POS.z]} color="#c4b5fd" label="Drain" />
       <Marker engine={engine} id="plantOwner" position={[PLANT_OWNER_POS.x, 0, PLANT_OWNER_POS.z]} color="#f6d98a" label="Plant owner" />
       <Marker engine={engine} id="robotOwner" position={[ROBOT_OWNER_POS.x, 0, ROBOT_OWNER_POS.z]} color="#fdba74" label="Robot owner" />
       <Html position={[CITY_POS.x, 6.9, CITY_POS.z]} center distanceFactor={18} zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
@@ -265,9 +267,9 @@ export function People({ engine }: { engine: Engine }) {
 function nameFor(id: PartyId): string {
   if (id === "robot") return "Kepler-01";
   if (id === "drone") return "Lumen-04";
-  if (id === "battery") return "BESS-2";
+  if (id === "battery") return "Battery";
   if (id === "treasury" || id === "plantOwner") return "Plant owner";
-  if (id === "customers") return "Residents";
+  if (id === "drain") return "Drain";
   if (id === "city") return "City";
   return "Robot owner";
 }

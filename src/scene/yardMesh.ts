@@ -10,7 +10,6 @@ import {
   FIELD_X,
   PANEL_X_MAX,
   PANEL_X_MIN,
-  RESIDENT_HOUSE,
   ROBOT_HOUSE,
   ROW_COUNT,
   TREASURY_POS,
@@ -270,7 +269,6 @@ export function yardGeometry(): THREE.BufferGeometry {
     addBox(bag, 0.32 * ts, 0.08 * ts, 0.18 * ts, "#f4f7f8", x, y, z);
   }
 
-  addHouse(bag, RESIDENT_HOUSE.x, RESIDENT_HOUSE.z, "#efe6d6", "#8d4b3a");
   addHouse(bag, ROBOT_HOUSE.x, ROBOT_HOUSE.z, "#f4efe4", "#3d5c4a");
   addCity(bag);
   addPowerCable(bag);

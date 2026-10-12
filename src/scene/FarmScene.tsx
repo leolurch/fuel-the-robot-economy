@@ -19,7 +19,6 @@ import {
   SoilingHaze,
   Treasury,
 } from "./Machines.tsx";
-import { LANDED_TRANSFERS } from "../peaq/landed.ts";
 import { shortAddress } from "../economy/model.ts";
 import { Panels } from "./Panels.tsx";
 
@@ -146,7 +145,7 @@ function paintSplitPanel(
   ctx.fillStyle = "#94a3b8";
   ctx.font = "14px sans-serif";
   ctx.fillText("Split view · Agung 9990", originX + 16, 58);
-  const rows = [...LANDED_TRANSFERS, ...snap.transfers];
+  const rows = snap.transfers;
   let y = 84;
   for (const row of rows) {
     ctx.fillStyle = "#111827";

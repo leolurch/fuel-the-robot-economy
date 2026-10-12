@@ -4,7 +4,7 @@ import { ACTOR_ORDER, PERSON_ORDER, PHASES, RUN_CYCLES, formatPeaq, inspectionLi
 import type { ActorId, Flow, PartyId, PersonId, Snapshot, Speed, TransferRow } from "../economy/types.ts";
 import { ACTIVITY_STATUS } from "../peaq/activityStatus.ts";
 import { KNOWN_MACHINES } from "../peaq/knownMachines.ts";
-import { AGUNG_EXPLORER_ACCOUNT, AGUNG_EXPLORER_TX, LANDED_TRANSFERS } from "../peaq/landed.ts";
+import { AGUNG_EXPLORER_ACCOUNT, AGUNG_EXPLORER_TX } from "../peaq/landed.ts";
 import { useAgungStatus } from "../peaq/useAgung.ts";
 import { SESSION, settleJob, useYardChain } from "../peaq/useYardChain.ts";
 import type { YardStatus } from "../peaq/yardTypes.ts";
@@ -16,14 +16,14 @@ const ACCENT: Record<PartyId, string> = {
   robot: "bg-orange-500",
   drone: "bg-sky-300",
   battery: "bg-teal-300",
-  customers: "bg-violet-300",
+  city: "bg-sky-200",
   plantOwner: "bg-amber-200",
   robotOwner: "bg-orange-300",
-  city: "bg-sky-200",
+  drain: "bg-violet-300",
 };
 
 const CIRCLE =
-  "The sun powers the plant, the plant sells that power to the city, residents pay the city rent so the city can buy energy again, and the plant pays the robot owner so Kepler and Lumen keep the panels producing.";
+  "The sun powers the plant, the city buys that power, the plant pays the robot owner so Kepler and Lumen keep the panels producing, and at the end every wallet returns its balance to the Drain for the next run.";
 
 function roleFor(flow: Flow | null, id: PartyId): "pays" | "receives" | null {
   if (!flow || flow.kind !== "pay") return null;
@@ -33,7 +33,7 @@ function roleFor(flow: Flow | null, id: PartyId): "pays" | "receives" | null {
 }
 
 function partyName(snap: Snapshot, id: PartyId): string {
-  if (id === "customers" || id === "plantOwner" || id === "robotOwner" || id === "city") return snap.people[id].name;
+  if (id === "city" || id === "plantOwner" || id === "robotOwner" || id === "drain") return snap.people[id].name;
   return snap.wallets[id].name;
 }
 
@@ -41,11 +41,11 @@ function stepLine(snap: Snapshot): { title: string; detail: string } {
   const flow = snap.flow;
   if (flow?.kind === "pay") {
     return {
-      title: `${partyName(snap, flow.from)} ${flow.from === "customers" ? "pay" : "pays"} ${partyName(snap, flow.to)}`,
+      title: snap.runComplete ? "Everything goes back to the Drain" : `${partyName(snap, flow.from)} pays ${partyName(snap, flow.to)}`,
       detail: `${flow.label} · ${formatPeaq(flow.amountCents)} PEAQ`,
     };
   }
-  if (snap.runComplete) return { title: "Owners settle with the residents", detail: "The circle closes" };
+  if (snap.runComplete) return { title: "Everything goes back to the Drain", detail: "Ready for the next run" };
   const phase = PHASES[snap.phaseIndex];
   if (snap.inspection) {
     return {
@@ -57,7 +57,7 @@ function stepLine(snap: Snapshot): { title: string; detail: string } {
   if (phase?.id === "survey") return { title: "Lumen inspects the panels", detail: "Kepler waits at the dock." };
   if (phase?.id === "wash") return { title: "Kepler cleans the panels", detail: "He takes the aisles and goes around a blocked row." };
   if (phase?.id === "inspect") return { title: "Lumen checks the yield", detail: "The drone measures what the plant can sell." };
-  if (phase?.id === "recharge") return { title: "Kepler buys energy", detail: "The rover pays BESS-2 so it can roll out again." };
+  if (phase?.id === "recharge") return { title: "Kepler buys energy", detail: "The rover pays the Battery so it can roll out again." };
   if (phase?.id === "refill") return { title: "The plant restocks the battery", detail: "Generation fills the pack back up." };
   return { title: phase?.label ?? "Rheinau", detail: phase?.blurb ?? "" };
 }
@@ -100,12 +100,10 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
       if (posted.current.has(job.id)) continue;
       posted.current.add(job.id);
       void settleJob(job, run).then((result) => {
-        if (result.skipped) return;
         if (result.steps && result.steps.length > 0) {
           for (const step of result.steps) {
-            const id = step.label === "Settlement" ? "settlement" : "settlement-robot";
             engine.recordTransfer({
-              id,
+              id: step.id,
               label: step.label,
               amountPeaq: step.amountPeaq,
               fromName: step.fromName,
@@ -121,10 +119,10 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
           if (!result.ok && result.steps.every((step) => step.ok)) {
             engine.recordTransfer({
               id: job.id,
-              label: "Settlement",
+              label: job.kind === "fund" ? "Run budget" : "Back to the Drain",
               amountPeaq: result.amountPeaq ?? "",
-              fromName: result.fromName ?? "Plant owner",
-              toName: result.toName ?? "Electricity customers",
+              fromName: result.fromName ?? "",
+              toName: result.toName ?? "",
               fromAddress: result.fromAddress ?? "",
               toAddress: result.toAddress ?? "",
               hash: null,
@@ -219,7 +217,7 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
               ))}
             </div>
             <ActivityNote />
-            <TransactionPanel snap={snap} live={live} />
+            <TransactionPanel snap={snap} />
           </aside>
         )}
       </div>
@@ -293,8 +291,8 @@ function ActivityNote() {
   );
 }
 
-function TransactionPanel({ snap, live }: { snap: Snapshot; live: boolean }) {
-  const rows = live ? snap.transfers : mergeRows(snap.transfers);
+function TransactionPanel({ snap }: { snap: Snapshot }) {
+  const rows = snap.transfers;
   const confirmed = rows.filter((row) => realHash(row.hash, row.ok)).length;
   return (
     <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/80 p-3">
@@ -304,7 +302,7 @@ function TransactionPanel({ snap, live }: { snap: Snapshot; live: boolean }) {
       </div>
       <p className="mt-1 text-sm leading-snug text-white/70">
         {snap.runComplete
-          ? "Settlement closes the circle. Every hash opens on Subscan."
+          ? "Every wallet returned its balance to the Drain. Every hash opens on Subscan."
           : "Each payment in the loop links to its transaction on the Agung testnet."}
       </p>
       {rows.length === 0 ? (
@@ -320,13 +318,6 @@ function TransactionPanel({ snap, live }: { snap: Snapshot; live: boolean }) {
       )}
     </section>
   );
-}
-
-function mergeRows(live: TransferRow[]): TransferRow[] {
-  const map = new Map<string, TransferRow>();
-  for (const row of LANDED_TRANSFERS) map.set(row.id, row);
-  for (const row of live) map.set(row.id, row);
-  return [...map.values()];
 }
 
 function TransferItem({ row }: { row: TransferRow }) {
@@ -617,20 +608,21 @@ function HowItWorks({ open, onClose }: { open: boolean; onClose: () => void }) {
             <li><b className="text-white">Lumen-04</b>, the drone, inspects the rows and reports them dirty.</li>
             <li><b className="text-white">Kepler-01</b>, the rover, washes every row and routes around a blocked one.</li>
             <li>Lumen flies again and hashes the recovered yield into a proof.</li>
-            <li>Residents pay the plant owner 0.05 PEAQ for that power.</li>
+            <li>The city pays the plant owner 0.05 PEAQ for that power.</li>
             <li>The plant owner pays the robot owner 0.03 PEAQ for cleaning and inspection.</li>
-            <li>Kepler pays BESS-2 0.01 PEAQ for 22 kWh, then the plant refills the battery.</li>
+            <li>Kepler pays the Battery 0.01 PEAQ for 22 kWh, then the plant refills the battery.</li>
           </ol>
           <p className="mt-2">
-            Residents also pay the city rent, so the city can buy the plant's energy again. After three days, a
-            settlement returns the owners' earnings and the circle closes.
+            The Drain wallet funds each run: 0.15 PEAQ to the city for three days of power and 0.03 PEAQ to Kepler
+            for three recharges. After three days, the plant owner, the robot owner, and the Battery send everything
+            back to the Drain, so the next run starts from the same budget and only gas is spent.
           </p>
         </section>
         <section>
           <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">Real on peaq Agung</h3>
           <ul className="mt-2 list-disc space-y-1.5 pl-5 marker:text-emerald-300/70">
-            <li>Four machine IDs in MachineRegistry, activated with the peaq SDK: the plant treasury, Kepler-01, Lumen-04, and BESS-2.</li>
-            <li>Four activation transactions and twelve PEAQ transfers with receipts: rent, power, robot pay, wages, recharge, and the settlement. Machine IDs and hashes link to Subscan.</li>
+            <li>Four machine IDs in MachineRegistry, activated with the peaq SDK: the plant treasury, Kepler-01, Lumen-04, and the Battery.</li>
+            <li>Every payment of a full run is a PEAQ transfer with a receipt: the run budget, power, robot pay, recharges, and the return to the Drain. Machine IDs and hashes link to Subscan.</li>
             <li>Live reads of the chain id, current block, and contract bytecode, straight from the public Agung RPC.</li>
             <li>
               <code className="rounded bg-white/10 px-1 font-mono text-sm">npm run verify</code> recomputes the machine IDs and checks every receipt.

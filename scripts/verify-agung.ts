@@ -4,8 +4,7 @@ import { generatePrivateKey } from "viem/accounts";
 import { AGUNG_RPC, AGUNG_TOKENOMICS_10 } from "../src/peaq/agung.ts";
 import { AGUNG_DEPLOYMENT } from "../src/peaq/deployment.ts";
 import { KNOWN_MACHINES, YARD_OPERATOR } from "../src/peaq/knownMachines.ts";
-import { KNOWN_RECEIPTS, LANDED_TRANSFERS } from "../src/peaq/landed.ts";
-import { LIVE_FLOAT_TX, LIVE_MACHINES, LIVE_OPERATOR, LIVE_TRANSFERS } from "./live-run.ts";
+import { REPLAY_RUN } from "../src/peaq/replayRun.ts";
 
 const rpc = process.env.PEAQOS_RPC_URL?.trim() || AGUNG_RPC;
 const client = createPublicClient({ transport: http(rpc, { timeout: 20_000 }) });
@@ -51,36 +50,26 @@ async function checkMachines(operator: string, machines: readonly { machineType:
 }
 
 await checkMachines(YARD_OPERATOR, KNOWN_MACHINES);
-await checkMachines(LIVE_OPERATOR, LIVE_MACHINES);
 
-const hashes = new Map<string, string>();
-for (const machine of KNOWN_MACHINES) hashes.set(machine.activationTx, `activateMachine ${machine.machineType}`);
-for (const row of LANDED_TRANSFERS) if (row.hash) hashes.set(row.hash, `${row.label} ${row.fromName} → ${row.toName}`);
-for (const machine of LIVE_MACHINES) hashes.set(machine.activationTx, `activateMachine ${machine.machineType} (live run)`);
-hashes.set(LIVE_FLOAT_TX, "Kepler-01 operating float (live run)");
-for (const result of Object.values(KNOWN_RECEIPTS)) {
-  if (result.txHash) hashes.set(result.txHash, `${result.label} ${result.fromName} → ${result.toName}`);
-  for (const step of result.steps ?? []) if (step.txHash) hashes.set(step.txHash, `${step.label} ${step.fromName} → ${step.toName}`);
-}
-
-console.log(`\nActivation and payment receipts (${hashes.size})`);
-for (const [hash, label] of hashes) {
+console.log(`\nActivation receipts (${KNOWN_MACHINES.length})`);
+for (const machine of KNOWN_MACHINES) {
   try {
-    const [receipt, tx] = await Promise.all([
-      client.getTransactionReceipt({ hash: hash as Hex }),
-      client.getTransaction({ hash: hash as Hex }),
-    ]);
+    const receipt = await client.getTransactionReceipt({ hash: machine.activationTx });
     const ok = receipt.status === "success";
     if (!ok) failures += 1;
-    console.log(`${ok ? "ok  " : "FAIL"} block ${receipt.blockNumber} ${formatEther(tx.value).padEnd(8)} PEAQ ${label}`);
+    console.log(`${ok ? "ok  " : "FAIL"} block ${receipt.blockNumber} activateMachine ${machine.machineType}`);
   } catch (error) {
     failures += 1;
-    console.log(`FAIL ${hash} ${label}: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`);
+    console.log(`FAIL ${machine.activationTx} ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`);
   }
 }
 
-console.log(`\nLive run: sender, recipient, and amount must match (${LIVE_TRANSFERS.length})`);
-for (const row of LIVE_TRANSFERS) {
+if (REPLAY_RUN.length === 0) {
+  failures += 1;
+  console.log("\nFAIL no replay run recorded in src/peaq/replayRun.ts");
+}
+console.log(`\nReplayed run: sender, recipient, and amount must match (${REPLAY_RUN.length})`);
+for (const row of REPLAY_RUN) {
   try {
     const [receipt, tx] = await Promise.all([
       client.getTransactionReceipt({ hash: row.hash as Hex }),

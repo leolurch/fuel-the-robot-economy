@@ -13,7 +13,7 @@ import {
   type Hex,
 } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
-import { PERSON_META, POWER_CENTS, RENT_CENTS, TARIFF, WORK_CENTS } from "../src/economy/model.ts";
+import { CITY_BUDGET_CENTS, KEPLER_BUDGET_CENTS, PERSON_META, PERSON_ORDER, POWER_CENTS, TARIFF, WORK_CENTS } from "../src/economy/model.ts";
 import type { ActorId, ChainKind, PersonId } from "../src/economy/types.ts";
 import { AGUNG_RPC, AGUNG_TOKENOMICS_10 } from "../src/peaq/agung.ts";
 import { AGUNG_DEPLOYMENT } from "../src/peaq/deployment.ts";
@@ -54,7 +54,7 @@ const SPECS: MachineSpec[] = [
   { actor: "treasury", name: "Rheinau treasury", machineType: "Rheinau-treasury", keyLabel: null },
   { actor: "robot", name: "Kepler", machineType: "Kepler-01", keyLabel: "Kepler-01" },
   { actor: "drone", name: "Lumen", machineType: "Lumen-04", keyLabel: "Lumen-04" },
-  { actor: "battery", name: "BESS-2", machineType: "BESS-2", keyLabel: "BESS-2" },
+  { actor: "battery", name: "Battery", machineType: "BESS-2", keyLabel: "BESS-2" },
 ];
 
 type Saved = Record<string, { machineId: string; txHash: string | null }>;
@@ -183,10 +183,10 @@ export async function startYard(): Promise<void> {
 
   operator = privateKeyToAccount(key);
   people = {
-    customers: operator,
+    city: privateKeyToAccount(childKey(key, "Rheinau-city")),
     plantOwner: privateKeyToAccount(childKey(key, "Rheinau-plant-owner")),
     robotOwner: privateKeyToAccount(childKey(key, "Rheinau-robot-owner")),
-    city: privateKeyToAccount(childKey(key, "Rheinau-city")),
+    drain: operator,
   };
   const saved = loadSaved();
   rows = SPECS.map((spec) => {
@@ -290,21 +290,6 @@ async function registerAll(starting: bigint): Promise<void> {
   }
   const failed = rows.filter((row) => row.machineId === null);
   blocker = failed.length === 0 ? null : failed.map((row) => `${row.machineType}: ${row.error}`).join(" ");
-  await fundKepler();
-}
-
-const KEPLER_FLOOR = 5n * 10n ** 16n;
-const KEPLER_FLOAT = 10n ** 17n;
-
-/** Kepler pays BESS-2 from its own wallet, so it needs a small float before the first recharge. */
-async function fundKepler(): Promise<void> {
-  const kepler = rows.find((row) => row.actor === "robot");
-  if (!operator || !kepler?.account) return;
-  const held = await publicClient.getBalance({ address: kepler.address });
-  if (held >= KEPLER_FLOOR) return;
-  const sent = await sendNative(operator, kepler.address, KEPLER_FLOAT, "Rheinau treasury");
-  if (sent.ok) console.log(`Kepler-01 float ${formatEther(KEPLER_FLOAT)} PEAQ: ${explorer(sent.hash)}`);
-  else kepler.error = `Kepler-01 float did not land: ${sent.error}`;
 }
 
 async function refreshBalances(): Promise<void> {
@@ -329,7 +314,7 @@ export async function yardStatus(): Promise<YardStatus> {
     ? formatEther(await publicClient.getBalance({ address: operator.address }).catch(() => 0n))
     : "0";
   const writesLanded = rows.some((row) => row.txHash !== null) || transfers.some((row) => row.ok);
-  const personRows: YardPerson[] = (["customers", "plantOwner", "robotOwner", "city"] as const).map((id) => ({
+  const personRows: YardPerson[] = PERSON_ORDER.map((id) => ({
     id,
     name: PERSON_META[id].name,
     role: PERSON_META[id].role,
@@ -383,7 +368,6 @@ export function settle(input: SettleInput): Promise<SettleResult> {
   if (!client || !operator) {
     const known = KNOWN_RECEIPTS[input.id];
     if (known?.ok) return Promise.resolve(known);
-    if (input.kind === "recharge") return Promise.resolve({ ok: false, skipped: true });
     return Promise.resolve({ ok: false, error: blocker ?? "No operator key is loaded. No transaction was submitted." });
   }
   const key = `${input.run}:${input.id}`;
@@ -412,6 +396,11 @@ async function settleOnce(input: SettleInput): Promise<SettleResult> {
     }
     if (!people) return { ok: false, error: "Owner wallets are not loaded. No transaction was submitted." };
 
+    if (input.kind === "fund") {
+      const funded = await fundRun(input.run, people);
+      settled.set(key, funded);
+      return funded;
+    }
     if (input.kind !== "settlement") {
       const plan = transferPlan(input.kind, people);
       if (!plan) return { ok: false, error: "Machine wallets are not loaded. No transaction was submitted." };
@@ -463,20 +452,23 @@ async function settleOnce(input: SettleInput): Promise<SettleResult> {
       return done;
     }
 
-    const bundled = await settleCircle(input.run);
-    settled.set(key, bundled);
-    return bundled;
+    const swept = await sweepToDrain(input.run, people);
+    settled.set(key, swept);
+    return swept;
   } catch (error) {
     return { ok: false, error: `Agung rejected the write: ${explain(error)}` };
   }
 }
 
-const GAS_RESERVE = 10n ** 14n;
 const STEP = 10n ** 14n;
+/** Each wallet keeps about this much for gas. Sweeps round to the nearest 0.0001 PEAQ so receipts stay readable. */
+const GAS_RESERVE = STEP;
+const GAS_FLOOR = 10n ** 12n;
 
 function spendable(balance: bigint): bigint {
-  if (balance <= GAS_RESERVE) return 0n;
-  return ((balance - GAS_RESERVE) / STEP) * STEP;
+  let amount = ((balance - GAS_RESERVE + STEP / 2n) / STEP) * STEP;
+  if (amount > balance - GAS_FLOOR) amount -= STEP;
+  return amount > 0n ? amount : 0n;
 }
 
 async function sendNative(
@@ -507,22 +499,19 @@ async function sendNative(
 }
 
 function transferPlan(
-  kind: Exclude<ChainKind, "settlement">,
+  kind: "power" | "work" | "recharge",
   owners: Record<PersonId, PrivateKeyAccount>,
 ): { amount: bigint; from: PrivateKeyAccount; to: Address; fromName: string; toName: string; label: string } | null {
   if (kind === "power") {
-    return { amount: centsToWei(POWER_CENTS), from: owners.customers, to: owners.plantOwner.address, fromName: PERSON_META.customers.name, toName: PERSON_META.plantOwner.name, label: "Power" };
+    return { amount: centsToWei(POWER_CENTS), from: owners.city, to: owners.plantOwner.address, fromName: PERSON_META.city.name, toName: PERSON_META.plantOwner.name, label: "Power" };
   }
   if (kind === "work") {
     return { amount: centsToWei(WORK_CENTS), from: owners.plantOwner, to: owners.robotOwner.address, fromName: PERSON_META.plantOwner.name, toName: PERSON_META.robotOwner.name, label: "Cleaning and inspection" };
   }
-  if (kind === "rent") {
-    return { amount: centsToWei(RENT_CENTS), from: owners.customers, to: owners.city.address, fromName: PERSON_META.customers.name, toName: PERSON_META.city.name, label: "Apartment rent" };
-  }
   const kepler = rows.find((row) => row.actor === "robot")?.account;
-  const bess = rows.find((row) => row.actor === "battery");
-  if (!kepler || !bess) return null;
-  return { amount: centsToWei(TARIFF.rechargeCents), from: kepler, to: bess.address, fromName: "Kepler-01", toName: "BESS-2", label: `${TARIFF.rechargeKwh} kWh recharge` };
+  const battery = rows.find((row) => row.actor === "battery");
+  if (!kepler || !battery) return null;
+  return { amount: centsToWei(TARIFF.rechargeCents), from: kepler, to: battery.address, fromName: "Kepler-01", toName: "Battery", label: `${TARIFF.rechargeKwh} kWh recharge` };
 }
 
 function remember(row: ChainTransfer): ChainTransfer {
@@ -532,69 +521,90 @@ function remember(row: ChainTransfer): ChainTransfer {
   return row;
 }
 
-async function settleCircle(run: string): Promise<SettleResult> {
-  if (!people) return { ok: false, error: "Owner wallets are not loaded. No transaction was submitted." };
-  const steps: SettleStep[] = [];
-  const robotBal = await publicClient.getBalance({ address: people.robotOwner.address });
-  const robotSend = spendable(robotBal);
-  if (robotSend > 0n) {
-    const sent = await sendNative(people.robotOwner, people.plantOwner.address, robotSend, PERSON_META.robotOwner.name);
-    const step: SettleStep = {
-      label: "Robot earnings into settlement",
-      amountPeaq: peaqString(robotSend),
-      fromName: PERSON_META.robotOwner.name,
-      toName: PERSON_META.plantOwner.name,
-      fromAddress: people.robotOwner.address,
-      toAddress: people.plantOwner.address,
-      txHash: sent.ok ? sent.hash : null,
-      explorer: sent.ok && sent.hash ? explorer(sent.hash) : null,
-      ok: sent.ok,
-      error: sent.ok ? null : sent.error,
-    };
-    steps.push(step);
-    remember({ id: "settlement-robot", run, ...step });
-    if (!sent.ok) {
-      return { ok: false, error: sent.error ?? "Robot earnings did not move. Settlement was not submitted.", steps };
-    }
-  }
-
-  const plantBal = await publicClient.getBalance({ address: people.plantOwner.address });
-  const plantSend = spendable(plantBal);
-  if (plantSend <= 0n) {
-    return {
-      ok: false,
-      error: "Plant owner has no earnings to return. No settlement was submitted.",
-      steps,
-    };
-  }
-  const sent = await sendNative(people.plantOwner, people.customers.address, plantSend, PERSON_META.plantOwner.name);
+async function sendStep(
+  run: string,
+  id: string,
+  label: string,
+  from: PrivateKeyAccount,
+  fromName: string,
+  to: Address,
+  toName: string,
+  amount: bigint,
+): Promise<SettleStep> {
+  const sent = await sendNative(from, to, amount, fromName);
   const step: SettleStep = {
-    label: "Settlement",
-    amountPeaq: peaqString(plantSend),
-    fromName: PERSON_META.plantOwner.name,
-    toName: PERSON_META.customers.name,
-    fromAddress: people.plantOwner.address,
-    toAddress: people.customers.address,
+    id,
+    label,
+    amountPeaq: peaqString(amount),
+    fromName,
+    toName,
+    fromAddress: from.address,
+    toAddress: to,
     txHash: sent.ok ? sent.hash : null,
     explorer: sent.ok && sent.hash ? explorer(sent.hash) : null,
     ok: sent.ok,
     error: sent.ok ? null : sent.error,
   };
-  steps.push(step);
-  remember({ id: "settlement", run, ...step });
-  if (!sent.ok || !sent.hash) {
-    return { ok: false, error: sent.error ?? "Settlement did not land.", steps };
-  }
+  remember({ run, ...step });
+  return step;
+}
+
+function bundle(steps: SettleStep[], emptyError: string): SettleResult {
+  const last = steps[steps.length - 1];
+  const failed = steps.find((step) => !step.ok);
+  if (!last) return { ok: false, error: emptyError, steps };
+  if (failed) return { ok: false, error: failed.error ?? `${failed.label} did not land.`, steps };
   return {
     ok: true,
-    txHash: sent.hash,
-    explorer: explorer(sent.hash) ?? undefined,
-    label: "Settlement",
-    amountPeaq: peaqString(plantSend),
-    fromName: PERSON_META.plantOwner.name,
-    toName: PERSON_META.customers.name,
-    fromAddress: people.plantOwner.address,
-    toAddress: people.customers.address,
+    txHash: last.txHash ?? undefined,
+    explorer: last.explorer ?? undefined,
+    label: last.label,
+    amountPeaq: last.amountPeaq,
+    fromName: last.fromName,
+    toName: last.toName,
+    fromAddress: last.fromAddress,
+    toAddress: last.toAddress,
     steps,
   };
+}
+
+/** A wallet that was never funded also gets a gas reserve, so it can pay its own way through the run. */
+async function budgetFor(address: Address, cents: number): Promise<bigint> {
+  const held = await publicClient.getBalance({ address });
+  return centsToWei(cents) + (held < GAS_RESERVE / 2n ? GAS_RESERVE : 0n);
+}
+
+async function fundRun(run: string, owners: Record<PersonId, PrivateKeyAccount>): Promise<SettleResult> {
+  const kepler = rows.find((row) => row.actor === "robot");
+  if (!kepler) return { ok: false, error: "Kepler-01 is not loaded. No transaction was submitted." };
+  const steps: SettleStep[] = [];
+  const city = await sendStep(run, "fund-city", "Power budget", owners.drain, PERSON_META.drain.name, owners.city.address, PERSON_META.city.name, await budgetFor(owners.city.address, CITY_BUDGET_CENTS));
+  steps.push(city);
+  if (city.ok) {
+    steps.push(
+      await sendStep(run, "fund-kepler", "Recharge budget", owners.drain, PERSON_META.drain.name, kepler.address, "Kepler-01", await budgetFor(kepler.address, KEPLER_BUDGET_CENTS)),
+    );
+  }
+  return bundle(steps, "The run was not funded.");
+}
+
+/** Every wallet in the loop returns what it holds to the Drain, so the next run starts from the same budget. */
+async function sweepToDrain(run: string, owners: Record<PersonId, PrivateKeyAccount>): Promise<SettleResult> {
+  const kepler = rows.find((row) => row.actor === "robot")?.account;
+  const battery = rows.find((row) => row.actor === "battery")?.account;
+  const sources: { id: string; name: string; account: PrivateKeyAccount | null | undefined }[] = [
+    { id: "return-plant-owner", name: PERSON_META.plantOwner.name, account: owners.plantOwner },
+    { id: "return-robot-owner", name: PERSON_META.robotOwner.name, account: owners.robotOwner },
+    { id: "return-battery", name: "Battery", account: battery },
+    { id: "return-kepler", name: "Kepler-01", account: kepler },
+    { id: "return-city", name: PERSON_META.city.name, account: owners.city },
+  ];
+  const steps: SettleStep[] = [];
+  for (const source of sources) {
+    if (!source.account) continue;
+    const amount = spendable(await publicClient.getBalance({ address: source.account.address }));
+    if (amount === 0n) continue;
+    steps.push(await sendStep(run, source.id, "Back to the Drain", source.account, source.name, owners.drain.address, PERSON_META.drain.name, amount));
+  }
+  return bundle(steps, "No wallet held anything to return. No settlement was submitted.");
 }

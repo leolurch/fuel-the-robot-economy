@@ -32,7 +32,7 @@ export function useYardChain(engine: Engine, run: string): YardStatus | null {
           seen.current = signature;
           engine.setIdentities(book);
         }
-        if (body.people?.some((person) => person.id === "city")) {
+        if (body.people?.some((person) => person.id === "drain")) {
           const people = {} as Record<PersonId, { address: `0x${string}` }>;
           for (const person of body.people) people[person.id] = { address: person.address };
           engine.setPeople(people);
@@ -88,7 +88,6 @@ export async function settleJob(job: ChainJob, run: string): Promise<SettleResul
   } catch (error) {
     const known = KNOWN_RECEIPTS[job.id];
     if (known) return known;
-    if (job.kind === "recharge") return { ok: false, skipped: true };
     const message = error instanceof Error ? error.message : "request failed";
     return { ok: false, error: `Agung write did not land: ${message}` };
   }
