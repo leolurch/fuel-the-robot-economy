@@ -1,3 +1,4 @@
+import "./env.ts";
 import { spawn } from "node:child_process";
 import { appendFileSync, createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";

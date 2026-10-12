@@ -25,6 +25,7 @@ This is the listing's "two machines, one deal" idea (a robot paying a charger) i
 | --- | --- |
 | **4 machine IDs** in MachineRegistry, activated with `@peaqos/peaq-os-sdk` `activateMachine` (plant treasury, Kepler-01, Lumen-04, BESS-2), all owned by the yard operator | Rover, drone, soiling, and battery physics (browser, no hardware) |
 | **12 PEAQ transfers with receipts**: rent, power, robot pay, wash wage, inspection fee, recharge, and the settlement. Every hash links to [Subscan](https://agung-testnet.subscan.io) | Without a funded key, the page replays those receipts instead of sending new ones |
+| **A full live run** sent by the yard server itself: 4 fresh activations under a second operator, then all 12 payments of a three-day run, including Kepler-01 paying BESS-2 from its own wallet each day ([details](#live-run-on-agung)) | |
 | Live reads: chain id, current block, MachineRegistry, DID precompile, and EventRegistry bytecode, plus wallet balances over the public RPC | Lumen's **activity event is not on chain**: Agung's EventRegistry reverts the call (see below) |
 
 The four `activateMachine` transactions are linked below and from each machine card. Do not take the labels on trust:
@@ -33,7 +34,7 @@ The four `activateMachine` transactions are linked below and from each machine c
 npm run verify
 ```
 
-This recomputes each machine ID with the peaq SDK, checks that MachineRegistry reports the operator as owner, and fetches all 16 receipts (4 activations, 12 payments) from Agung.
+This recomputes each machine ID with the peaq SDK, checks that MachineRegistry reports the operator as owner, and fetches every receipt from Agung: the replayed set (4 activations, 12 payments) and the live run (4 activations, Kepler's float, 12 payments, each matched on sender, recipient, and amount).
 
 <details>
 <summary>Machine IDs and a few receipts</summary>
@@ -53,6 +54,25 @@ This recomputes each machine ID with the peaq SDK, checks that MachineRegistry r
 Subscan shows Agung's testnet token as AGNG. The app calls it PEAQ.
 
 </details>
+
+### Live run on Agung
+
+With a funded key loaded, the yard server sent one complete three-day run on its own, with no hand-made transactions. Operator [`0x8a61…d23A`](https://agung-testnet.subscan.io/account/0x8a61248e23e04b97A0A42A87D09459573478d23A) was funded from the peaq Gas Station, activated four new machine IDs, gave Kepler-01 a 0.1 PEAQ operating float ([`0xd9b2…cdfb`](https://agung-testnet.subscan.io/tx/0xd9b25cb256a65bf6e9be15728890af97d592a2fe93b57d7eea2eab6f0f05cdfb)), and then sent each payment as the page reached it. The full list, with addresses and machine IDs, is in [`scripts/live-run.ts`](scripts/live-run.ts).
+
+| Payment | Amount | From → To | Receipt |
+| --- | --- | --- | --- |
+| Apartment rent | 0.05 | Residents → City | [`0x4159…c5eb`](https://agung-testnet.subscan.io/tx/0x4159aa0a4f850a98b3f7fa6853bc3267506722f14ffda7a04394fe49bf31c5eb) |
+| Day 1 power | 0.05 | Residents → Plant owner | [`0x856a…edda`](https://agung-testnet.subscan.io/tx/0x856a256a49e1a9cf12729ddbf82029f89f8f4a3e109c92051442b9b8dabcedda) |
+| Day 1 cleaning and inspection | 0.03 | Plant owner → Robot owner | [`0x7550…7e3c`](https://agung-testnet.subscan.io/tx/0x75507a1f898c2753c5e0ec0a380f90db503cacd284a60c1198ebcccdac047e3c) |
+| Day 1 recharge, 22 kWh | 0.01 | Kepler-01 → BESS-2 | [`0xa9e9…96cb`](https://agung-testnet.subscan.io/tx/0xa9e92e6b9f92d024e811d79427de993708dc6248b66e4882f47a8dbb6d4496cb) |
+| Day 2 power | 0.05 | Residents → Plant owner | [`0x4c64…a034`](https://agung-testnet.subscan.io/tx/0x4c64684800a3df9dd2e74ce5eb9232759f0b4dd00459dd9c01ba98f406faa034) |
+| Day 2 cleaning and inspection | 0.03 | Plant owner → Robot owner | [`0x5de2…2665`](https://agung-testnet.subscan.io/tx/0x5de2f24b93346cb71ce15d7cc08969d4a6cc9d7aba9db6861d81f30900fe2665) |
+| Day 2 recharge, 22 kWh | 0.01 | Kepler-01 → BESS-2 | [`0x550d…53cd`](https://agung-testnet.subscan.io/tx/0x550dd2b74d9b5e03d1d9352b7f69e4295a9c4fafcdcb32e6f42dff96436753cd) |
+| Day 3 power | 0.05 | Residents → Plant owner | [`0x4c3f…ef60`](https://agung-testnet.subscan.io/tx/0x4c3fe0928984bb5e67924a0df50fc3f29d464753039e2e8e7545669b2badef60) |
+| Day 3 cleaning and inspection | 0.03 | Plant owner → Robot owner | [`0x17b6…af74`](https://agung-testnet.subscan.io/tx/0x17b635f3285a298fd84d38a6241d159a2c10a9a826e26719457e1d287072af74) |
+| Day 3 recharge, 22 kWh | 0.01 | Kepler-01 → BESS-2 | [`0xdca3…4532`](https://agung-testnet.subscan.io/tx/0xdca3482b425ae0fde841ef51ebc4fea35dcebbd0ed6aa7d7165ec05fae8d4532) |
+| Robot earnings into settlement | 0.0899 | Robot owner → Plant owner | [`0x20fe…de64`](https://agung-testnet.subscan.io/tx/0x20fe1db877919055c2712cde9f12099397c4cd449e4dd66b1c5868db075dde64) |
+| Settlement | 0.1498 | Plant owner → Residents | [`0x121c…de3d`](https://agung-testnet.subscan.io/tx/0x121c5380848c89ee9604f50a4c925dfabe2b7d0171d179572af86fa587a3de3d) |
 
 **Known gap.** Lumen's inspection should also be reported as a peaqOS activity event (`EVENT_TYPE_ACTIVITY`, self-reported trust). Simulating that call against EventRegistry `0x2DAD…0040` reverts with empty data, from both the operator and Lumen-04, so nothing was broadcast. The page shows this as "Not on chain yet" instead of inventing a hash.
 
@@ -84,7 +104,13 @@ The page also works as a static build with no server. It then shows the verified
 
 ### Sending new transactions (optional)
 
-With a funded Agung key, the yard server activates any missing machines (`activateMachine`, entry bond read from `MachineSubscription.requiredPeaqAmount(0)`, 0.4 PEAQ on Agung) and sends each payment as a native transfer. Copy `.env.example` to `.env`, which is git-ignored, and set `PEAQOS_PRIVATE_KEY` or `PEAQOS_PRIVATE_KEY_FILE`. Child wallets for the machines and owners are derived from that key in memory. Without a key, the header shows "Replaying confirmed receipts".
+With a funded Agung key, the yard server activates any missing machines (`activateMachine`, entry bond read from `MachineSubscription.requiredPeaqAmount(0)`, 0.4 PEAQ on Agung), tops Kepler-01 up to a 0.1 PEAQ float when it holds less than 0.05, and then sends each payment as a native transfer while the page plays. Copy `.env.example` to `.env`, which is git-ignored, and set `PEAQOS_PRIVATE_KEY` or `PEAQOS_PRIVATE_KEY_FILE`. Put the treasury private key only in the environment or in a file outside the repo. Child wallets for the machines and owners are derived from that key in memory.
+
+The header then shows "Live writer". Every page load and every restart (R) is a new run that sends new transactions. Receipts never carry over from an earlier run. Without a key, the header shows "Replaying confirmed receipts".
+
+Agung tokens are free from the [peaq Gas Station](https://depinstation.peaq.xyz) (5 PEAQ per new wallet). The first start costs 1.6 PEAQ in bonds plus Kepler's float. After that, a run costs the operator about 0.05 PEAQ (the city keeps the rent) and Kepler 0.03 PEAQ in recharges. Most of the rest flows back through the settlement.
+
+Every visitor's page load starts its own run, so on a public URL either leave the key out (replay mode) or expect each visit to spend from the operator wallet.
 
 ## Screenshots
 

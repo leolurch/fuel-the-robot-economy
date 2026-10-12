@@ -472,6 +472,12 @@ async function settleOnce(input: SettleInput): Promise<SettleResult> {
 }
 
 const GAS_RESERVE = 10n ** 14n;
+const STEP = 10n ** 14n;
+
+function spendable(balance: bigint): bigint {
+  if (balance <= GAS_RESERVE) return 0n;
+  return ((balance - GAS_RESERVE) / STEP) * STEP;
+}
 
 async function sendNative(
   from: PrivateKeyAccount,
@@ -530,7 +536,7 @@ async function settleCircle(run: string): Promise<SettleResult> {
   if (!people) return { ok: false, error: "Owner wallets are not loaded. No transaction was submitted." };
   const steps: SettleStep[] = [];
   const robotBal = await publicClient.getBalance({ address: people.robotOwner.address });
-  const robotSend = robotBal > GAS_RESERVE ? robotBal - GAS_RESERVE : 0n;
+  const robotSend = spendable(robotBal);
   if (robotSend > 0n) {
     const sent = await sendNative(people.robotOwner, people.plantOwner.address, robotSend, PERSON_META.robotOwner.name);
     const step: SettleStep = {
@@ -553,7 +559,7 @@ async function settleCircle(run: string): Promise<SettleResult> {
   }
 
   const plantBal = await publicClient.getBalance({ address: people.plantOwner.address });
-  const plantSend = plantBal > GAS_RESERVE ? plantBal - GAS_RESERVE : 0n;
+  const plantSend = spendable(plantBal);
   if (plantSend <= 0n) {
     return {
       ok: false,
