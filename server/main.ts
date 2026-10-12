@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { appendFileSync, createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, normalize } from "node:path";
-import type { ChainKind } from "../src/economy/types.ts";
+import { CHAIN_KINDS, type ChainKind } from "../src/economy/types.ts";
 import { settle, startYard, yardStatus } from "./chain.ts";
 
 const host = process.env.HOST ?? "0.0.0.0";
@@ -48,7 +48,7 @@ function sendFile(res: ServerResponse, file: string): void {
 }
 
 function isKind(value: string): value is ChainKind {
-  return value === "power" || value === "work" || value === "settlement" || value === "rent" || value === "recharge";
+  return (CHAIN_KINDS as readonly string[]).includes(value);
 }
 
 async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
