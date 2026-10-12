@@ -15,9 +15,10 @@ const STATIC_REPLAY: YardStatus = {
   operator: null,
   operatorBalance: "0",
   bondPeaq: "1",
-  blocker: "Static build without the yard server. The page replays the confirmed Agung run.",
+  blocker: "This host serves the page without the writer, so runs replay the confirmed Agung run.",
   readOnly: true,
   writesLanded: true,
+  live: { available: false, reason: "This host serves the page without the writer." },
   machines: [],
   people: [],
   transfers: [],
@@ -83,6 +84,7 @@ export function useYardChain(engine: Engine, run: string): YardStatus | null {
             explorer: row.explorer,
             ok: row.ok,
             error: row.error,
+            kind: row.kind,
           });
         }
       } catch {
@@ -102,9 +104,41 @@ export function useYardChain(engine: Engine, run: string): YardStatus | null {
   return status;
 }
 
-export async function settleJob(job: ChainJob, run: string): Promise<SettleResult> {
+type RunQueue = { tail: Promise<unknown>; replay: string | null };
+
+const queues = new Map<string, RunQueue>();
+
+function replayed(job: ChainJob): SettleResult {
+  const known = KNOWN_RECEIPTS[job.id];
+  if (!known) return { ok: false, replay: true, error: "No confirmed receipt exists for this step." };
+  return { ...known, replay: true };
+}
+
+/**
+ * Jobs of one run go to the writer one at a time, in order, so a settlement never overtakes the
+ * recharge before it. Once the writer refuses a run, the rest of that run replays confirmed receipts.
+ */
+export function settleJob(job: ChainJob, run: string, onReplay: (reason: string) => void): Promise<SettleResult> {
+  let queue = queues.get(run);
+  if (!queue) {
+    queue = { tail: Promise.resolve(), replay: null };
+    queues.set(run, queue);
+  }
+  const state = queue;
+  const next = state.tail.then(() => settleNow(job, run, state, onReplay));
+  state.tail = next.catch(() => undefined);
+  return next;
+}
+
+async function settleNow(job: ChainJob, run: string, state: RunQueue, onReplay: (reason: string) => void): Promise<SettleResult> {
+  const switchToReplay = (reason: string) => {
+    state.replay = reason;
+    onReplay(reason);
+    return replayed(job);
+  };
+  if (state.replay) return replayed(job);
+  if (serverMissing) return switchToReplay("This host serves the page without the writer.");
   try {
-    if (serverMissing) throw new Error("no yard server on this host");
     const response = await fetch("/api/peaq/settle", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -116,11 +150,17 @@ export async function settleJob(job: ChainJob, run: string): Promise<SettleResul
         run,
       }),
     });
-    if (!response.ok) throw new Error(`yard server answered ${response.status}`);
-    return (await response.json()) as SettleResult;
+    const json = response.headers.get("content-type")?.includes("application/json") ?? false;
+    if (response.status === 404 || response.status === 405 || (response.ok && !json)) {
+      serverMissing = true;
+      return switchToReplay("This host serves the page without the writer.");
+    }
+    if (response.status === 429) return switchToReplay("Too many requests from this connection.");
+    if (!response.ok) throw new Error(`the writer answered ${response.status}`);
+    const result = (await response.json()) as SettleResult;
+    if (result.replay) return switchToReplay(result.error ?? "The writer did not take this run.");
+    return result;
   } catch (error) {
-    const known = KNOWN_RECEIPTS[job.id];
-    if (known) return known;
     const message = error instanceof Error ? error.message : "request failed";
     return { ok: false, error: `Agung write did not land: ${message}` };
   }

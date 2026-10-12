@@ -5,7 +5,6 @@ import * as THREE from "three";
 import type { Engine } from "../economy/engine.ts";
 import type { PartyId } from "../economy/types.ts";
 import { inspectionLine } from "../economy/model.ts";
-import { ACTIVITY_STATUS } from "../peaq/activityStatus.ts";
 import { BESS_POS, CITY_POS, DRONE_ALT, FIELD_X, FIELD_Z, PLANT_OWNER_POS, ROBOT_OWNER_POS, TREASURY_POS } from "../world/layout.ts";
 import { droneBodyGeometry, robotBodyGeometry } from "./yardMesh.ts";
 
@@ -295,7 +294,8 @@ function Marker({
   );
 }
 
-const RECEIPT_HASH = /^0x[0-9a-fA-F]{64}$/.test(ACTIVITY_STATUS.hash ?? "") ? ACTIVITY_STATUS.hash : null;
+/** Each run's own event hash is in the receipts panel; the sign only says where the report goes. */
+const SIGN_FOOTER = "Lumen-04 reports this to peaq EventRegistry · machine 352";
 
 function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const words = text.split(/\s+/).filter((word) => word.length > 0);
@@ -354,14 +354,7 @@ function inspectionTexture(verdict: "dirty" | "clean"): THREE.CanvasTexture {
     titleLines = wrapLines(ctx, inspectionLine(verdict), maxWidth);
     ctx.font = `600 ${bodySize}px sans-serif`;
     body = [];
-    if (RECEIPT_HASH) {
-      const hashLines = wrapLines(ctx, RECEIPT_HASH, maxWidth);
-      const linkLines = wrapLines(ctx, `https://agung-testnet.subscan.io/tx/${RECEIPT_HASH}`, maxWidth);
-      if (!ACTIVITY_STATUS.ok) body.push(...wrapLines(ctx, ACTIVITY_STATUS.error, maxWidth));
-      body.push(...hashLines, ...linkLines);
-    } else {
-      body.push(...wrapLines(ctx, ACTIVITY_STATUS.error, maxWidth));
-    }
+    body.push(...wrapLines(ctx, SIGN_FOOTER, maxWidth));
   };
   compose();
   while (titleLines.length * (titleSize + 12) + 28 + body.length * (bodySize + 16) > innerHeight && titleSize > 44) {
@@ -380,7 +373,7 @@ function inspectionTexture(verdict: "dirty" | "clean"): THREE.CanvasTexture {
   }
   y += 28;
   ctx.font = `600 ${bodySize}px sans-serif`;
-  ctx.fillStyle = RECEIPT_HASH ? "#d6e4ff" : "#fecdd3";
+  ctx.fillStyle = "#d6e4ff";
   for (const line of body) {
     ctx.fillText(line, canvas.width / 2, y);
     y += bodySize + 16;

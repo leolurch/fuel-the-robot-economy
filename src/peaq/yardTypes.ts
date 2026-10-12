@@ -1,4 +1,4 @@
-import type { ActorId, PersonId } from "../economy/types.ts";
+import type { ActorId, LegKind, PersonId } from "../economy/types.ts";
 
 export type YardMachine = {
   actor: ActorId;
@@ -35,6 +35,7 @@ export type ChainTransfer = {
   error: string | null;
   /** Page run that triggered the transfer, so a reset page does not pick up an older run's rows. */
   run?: string;
+  kind?: LegKind;
 };
 
 export type YardStatus = {
@@ -47,6 +48,8 @@ export type YardStatus = {
   /** True when the server has no signing key and only replays confirmed receipts. */
   readOnly?: boolean;
   writesLanded: boolean;
+  /** Whether a run started now would send fresh transactions, and why not if it would replay. */
+  live?: { available: boolean; reason: string | null };
   machines: YardMachine[];
   people: YardPerson[];
   transfers: ChainTransfer[];
@@ -64,11 +67,14 @@ export type SettleStep = {
   explorer: string | null;
   ok: boolean;
   error: string | null;
+  kind?: LegKind;
 };
 
 export type SettleResult = {
   ok: boolean;
   error?: string;
+  /** The server refused to write for this run (busy, rate limit, low reserve). The page replays instead. */
+  replay?: boolean;
   txHash?: string;
   explorer?: string;
   label?: string;

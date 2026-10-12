@@ -1,7 +1,7 @@
 export type ReplayLeg = {
-  /** Chain job that produced the transfer: "fund", "1:power", …, "settlement". */
+  /** Chain job that produced the transaction: "fund", "1:power", …, "settlement". */
   job: string;
-  /** Same as job for single transfers, or the step id inside a funding or settlement job. */
+  /** Same as job for single transfers, or the step id inside a job with several transactions. */
   id: string;
   label: string;
   amountPeaq: string;
@@ -10,9 +10,11 @@ export type ReplayLeg = {
   from: `0x${string}`;
   to: `0x${string}`;
   hash: `0x${string}`;
+  /** Lumen's EventRegistry submissions carry no PEAQ. */
+  kind?: "event";
 };
 
-/** One full run sent by the yard server on Agung. Hashes were read from receipts, not invented. */
+/** One full run sent by the yard writer on Agung, recorded by scripts/record-run.ts. Hashes come from receipts. */
 export const REPLAY_RUN: readonly ReplayLeg[] = [
   {
     job: "fund",
@@ -23,7 +25,7 @@ export const REPLAY_RUN: readonly ReplayLeg[] = [
     toName: "City",
     from: "0x8a61248e23e04b97A0A42A87D09459573478d23A",
     to: "0x0f6213A1f06eCDE70823EAb4132f89a0bFd83Fd6",
-    hash: "0xc2cb0378c703d3d15b6bae922ba66587e960a04e44a91f107db8281c8be1e0ce",
+    hash: "0x8c05475e142de7e26bb7419e944f76775fe024dbf8690f716fb6724febf9e682",
   },
   {
     job: "fund",
@@ -34,7 +36,7 @@ export const REPLAY_RUN: readonly ReplayLeg[] = [
     toName: "Kepler-01",
     from: "0x8a61248e23e04b97A0A42A87D09459573478d23A",
     to: "0xa3893E09F5546B56B6e845ad194e28a216730931",
-    hash: "0x7a27c4b6926054fdebe908e7b1485727d1cbdde423658c8e3c06f99e3e750671",
+    hash: "0xa403ca950a91802e4d20329fc2ae6319f6106614f2f2a1cdeff44d569a7049cf",
   },
   {
     job: "1:power",
@@ -45,7 +47,19 @@ export const REPLAY_RUN: readonly ReplayLeg[] = [
     toName: "Plant owner",
     from: "0x0f6213A1f06eCDE70823EAb4132f89a0bFd83Fd6",
     to: "0x130B2111C24e55B03918CAe018F4C0fABFDe2EaB",
-    hash: "0x4ce9f0b8e5122bb3545b75ec1a70ba07cd8bcf7d0cc929793e80fce0c23769ec",
+    hash: "0xba522f9c7d17b8963715d1232cd35ccf8eef355a12d9c6fbd66cc99af07f6411",
+  },
+  {
+    job: "1:work",
+    id: "1:inspection",
+    label: "Lumen inspection event",
+    amountPeaq: "0",
+    fromName: "Lumen-04",
+    toName: "EventRegistry",
+    from: "0x77cc0A6aeA9F14c842251aE1384E45A3F30320d9",
+    to: "0x2DAD8905380993940e340C5cE6d313d5c2780040",
+    hash: "0xaae177aab20fe1f78904ca3ca1419ddd30d9c8c5dc143af2001dab8ad3b97b52",
+    kind: "event",
   },
   {
     job: "1:work",
@@ -56,7 +70,7 @@ export const REPLAY_RUN: readonly ReplayLeg[] = [
     toName: "Robot owner",
     from: "0x130B2111C24e55B03918CAe018F4C0fABFDe2EaB",
     to: "0x84AFCdE8e20c78189Cb792af78901ead5c364a81",
-    hash: "0x3c4c399d25ac257c2d81884e3898a376f89fcc511fdeafde6422a157c8f42210",
+    hash: "0xbd3ee91fb01d633c4d20c4d30e5908caa0cca5d069668cc20205444a9e5735f5",
   },
   {
     job: "1:recharge",
@@ -67,7 +81,7 @@ export const REPLAY_RUN: readonly ReplayLeg[] = [
     toName: "Battery",
     from: "0xa3893E09F5546B56B6e845ad194e28a216730931",
     to: "0x6F8A86803dafE766F6381F781D5003BC5aa2df5d",
-    hash: "0x375af72cd7e116405ff4d733f46d14ff1862d20fde9b23aed62593f074eecaf9",
+    hash: "0x74f87b14596dca9414096cc5d65cc13eb51e042df72f0d9103e1c2f603ea2382",
   },
   {
     job: "2:power",
@@ -78,7 +92,19 @@ export const REPLAY_RUN: readonly ReplayLeg[] = [
     toName: "Plant owner",
     from: "0x0f6213A1f06eCDE70823EAb4132f89a0bFd83Fd6",
     to: "0x130B2111C24e55B03918CAe018F4C0fABFDe2EaB",
-    hash: "0x0a326791f47ce144e394e3361bebf78affc739e4847942c9142124c0e388baae",
+    hash: "0xa733425bcdf4f2568995773f01e857e4fd56886a627eaab69ea61472eb4d9b83",
+  },
+  {
+    job: "2:work",
+    id: "2:inspection",
+    label: "Lumen inspection event",
+    amountPeaq: "0",
+    fromName: "Lumen-04",
+    toName: "EventRegistry",
+    from: "0x77cc0A6aeA9F14c842251aE1384E45A3F30320d9",
+    to: "0x2DAD8905380993940e340C5cE6d313d5c2780040",
+    hash: "0xd9347a5a63fd178b13b4ca16db5f934c826c8c1d6ba58838005cb83484c7cb8b",
+    kind: "event",
   },
   {
     job: "2:work",
@@ -89,7 +115,7 @@ export const REPLAY_RUN: readonly ReplayLeg[] = [
     toName: "Robot owner",
     from: "0x130B2111C24e55B03918CAe018F4C0fABFDe2EaB",
     to: "0x84AFCdE8e20c78189Cb792af78901ead5c364a81",
-    hash: "0x236cbae29542cbd77364e0bb736108f8745bfee5779ba27fe34ded038970e05d",
+    hash: "0xb508212f0b1fcc93647743d51cc8cdfe0c136a1c9f8ec0db4f6196270e091d2e",
   },
   {
     job: "2:recharge",
@@ -100,7 +126,7 @@ export const REPLAY_RUN: readonly ReplayLeg[] = [
     toName: "Battery",
     from: "0xa3893E09F5546B56B6e845ad194e28a216730931",
     to: "0x6F8A86803dafE766F6381F781D5003BC5aa2df5d",
-    hash: "0xed6381bd6999927dd992e7b9223127f9366359c6814ec604159e92522bea5ed7",
+    hash: "0x7d4e47c5b40c9a94bcef1a5ffaa7415ea146be47bbbfa4a17b8b0c1024efdf32",
   },
   {
     job: "3:power",
@@ -111,7 +137,19 @@ export const REPLAY_RUN: readonly ReplayLeg[] = [
     toName: "Plant owner",
     from: "0x0f6213A1f06eCDE70823EAb4132f89a0bFd83Fd6",
     to: "0x130B2111C24e55B03918CAe018F4C0fABFDe2EaB",
-    hash: "0xa39e8dc0c458c90aec4474bd2631613126c58579ae2998908397a9cc791a09de",
+    hash: "0xec4a7dd67d725b286caaf95d8cdfc75b16c96f5c12e1491edee4c037c867972c",
+  },
+  {
+    job: "3:work",
+    id: "3:inspection",
+    label: "Lumen inspection event",
+    amountPeaq: "0",
+    fromName: "Lumen-04",
+    toName: "EventRegistry",
+    from: "0x77cc0A6aeA9F14c842251aE1384E45A3F30320d9",
+    to: "0x2DAD8905380993940e340C5cE6d313d5c2780040",
+    hash: "0x4a28ce350f0011171a8c7830a635ba1ffaba88645255b7825084d9cd8d5e1f79",
+    kind: "event",
   },
   {
     job: "3:work",
@@ -122,7 +160,7 @@ export const REPLAY_RUN: readonly ReplayLeg[] = [
     toName: "Robot owner",
     from: "0x130B2111C24e55B03918CAe018F4C0fABFDe2EaB",
     to: "0x84AFCdE8e20c78189Cb792af78901ead5c364a81",
-    hash: "0x9dc52fc10867fc3a393d1fa8451327a5843688311545cb7b9f9577eba42c9b2b",
+    hash: "0x0fdb3a703ac388f766b92641edfdc29f26ceceb0cd398e1273bb58731bf9901a",
   },
   {
     job: "3:recharge",
@@ -133,7 +171,7 @@ export const REPLAY_RUN: readonly ReplayLeg[] = [
     toName: "Battery",
     from: "0xa3893E09F5546B56B6e845ad194e28a216730931",
     to: "0x6F8A86803dafE766F6381F781D5003BC5aa2df5d",
-    hash: "0x3cb25cf5233bb906c1b25277f202fe683ad3e63d79f39ed01894fb695f7b5257",
+    hash: "0xb4cc425f1556464c214f9938a5890bfdbb5eb65ce39027f82c7e78c48b9c5eff",
   },
   {
     job: "settlement",
@@ -144,7 +182,7 @@ export const REPLAY_RUN: readonly ReplayLeg[] = [
     toName: "Run reserve",
     from: "0x130B2111C24e55B03918CAe018F4C0fABFDe2EaB",
     to: "0x8a61248e23e04b97A0A42A87D09459573478d23A",
-    hash: "0x969960b4b79fce8d1ff004609201b4f5ac5f1db31575a3e0ce001510ca2f028f",
+    hash: "0x345411930f6741c4523cd7b7b986f2c3284db56a0c3614cc9c8be290dc7d9b4f",
   },
   {
     job: "settlement",
@@ -155,7 +193,7 @@ export const REPLAY_RUN: readonly ReplayLeg[] = [
     toName: "Run reserve",
     from: "0x84AFCdE8e20c78189Cb792af78901ead5c364a81",
     to: "0x8a61248e23e04b97A0A42A87D09459573478d23A",
-    hash: "0x6134a4b20e9a682fd0f65c6e3571a27742d143950247e2d829cd27ab30cf69b0",
+    hash: "0xb68d012152928929aef7329fec2ee7f8c1c3b16bc049d382bc45e82329ff5393",
   },
   {
     job: "settlement",
@@ -166,6 +204,6 @@ export const REPLAY_RUN: readonly ReplayLeg[] = [
     toName: "Run reserve",
     from: "0x6F8A86803dafE766F6381F781D5003BC5aa2df5d",
     to: "0x8a61248e23e04b97A0A42A87D09459573478d23A",
-    hash: "0xdbb3fc15913bc4c7895f51f50a2155432967492f0e3d52d700c33bac30677591",
+    hash: "0xe27e331be887e333316c1e063b6cd9db293d951733bd8a3acb94ebb78eec3920",
   },
 ];

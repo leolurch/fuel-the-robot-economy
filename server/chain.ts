@@ -1,6 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { PeaqosClient } from "@peaqos/peaq-os-sdk";
 import {
   createPublicClient,
   createWalletClient,
@@ -8,7 +7,10 @@ import {
   formatEther,
   http,
   keccak256,
+  parseAbi,
   toBytes,
+  toHex,
+  zeroHash,
   type Address,
   type Hex,
 } from "viem";
@@ -18,11 +20,14 @@ import type { ActorId, ChainKind, PersonId } from "../src/economy/types.ts";
 import { AGUNG_RPC, AGUNG_TOKENOMICS_10 } from "../src/peaq/agung.ts";
 import { AGUNG_DEPLOYMENT } from "../src/peaq/deployment.ts";
 import { KNOWN_MACHINES, KNOWN_PEOPLE } from "../src/peaq/knownMachines.ts";
-import { KNOWN_RECEIPTS } from "../src/peaq/landed.ts";
 import type { ChainTransfer, SettleResult, SettleStep, YardMachine, YardPerson, YardStatus } from "../src/peaq/yardTypes.ts";
+import { admitRun, holdRun, releaseRun, walletsBusy } from "./guard.ts";
+import { loadOperatorKey } from "./secret.ts";
 
 const EXPLORER = "https://agung-testnet.subscan.io/tx/";
 const STATE_FILE = process.env.AGUNG_STATE_FILE ?? "data/agung-machines.json";
+/** Below this the Drain cannot fund a run (0.18 PEAQ) with room for gas, so runs replay instead. */
+const MIN_DRAIN_WEI = 25n * 10n ** 16n;
 
 const agung = defineChain({
   id: AGUNG_DEPLOYMENT.chainId,
@@ -43,6 +48,17 @@ const bondAbi = [
   },
 ] as const;
 
+/** Agung's EventRegistry is still the Tokenomics 1.0 contract: 9-arg submitEvent (no currency) keyed by IdentityRegistry 1.0 ids. SDK 0.8 encodes a 10-arg call that does not exist there. */
+const legacyEventAbi = parseAbi([
+  "function machineIdOfOwner(address) view returns (uint256)",
+  "function submitEvent(uint256 machineId,uint8 eventType,uint256 value,uint256 timestamp,bytes32 dataHash,uint8 trustLevel,uint256 sourceChainId,bytes32 sourceTxHash,bytes metadata)",
+  "error MachineNotFound()",
+  "error NotAuthorizedSubmitter()",
+  "error FutureTimestamp()",
+  "error MetadataTooLarge()",
+  "error MachineDeactivated()",
+]);
+
 type MachineSpec = {
   actor: ActorId;
   name: string;
@@ -61,36 +77,27 @@ type Saved = Record<string, { machineId: string; txHash: string | null }>;
 
 type Row = YardMachine & { account: PrivateKeyAccount | null };
 
+export type Visitor = { id: string };
+
 let rows: Row[] = [];
 let operator: PrivateKeyAccount | null = null;
 let people: Record<PersonId, PrivateKeyAccount> | null = null;
 const transfers: ChainTransfer[] = [];
-let client: PeaqosClient<"tokenomics20"> | null = null;
 let bondWei = 0n;
 let blocker: string | null = null;
 let tail: Promise<unknown> = Promise.resolve();
+let lumenLegacyId: bigint | null = null;
 
 function explain(error: unknown): string {
   if (error && typeof error === "object") {
+    const short = "shortMessage" in error ? String(error.shortMessage) : "";
+    if (short) return short;
     const code = "code" in error ? String(error.code) : "";
     const message = "message" in error ? String(error.message) : "";
     if (code && message) return `${code}: ${message}`;
     if (message) return message;
   }
   return error instanceof Error ? error.message : String(error);
-}
-
-function loadKey(): Hex | null {
-  const inline = process.env.PEAQOS_PRIVATE_KEY?.trim();
-  if (inline) return /^0x[0-9a-fA-F]{64}$/.test(inline) ? (inline as Hex) : null;
-  const file = process.env.PEAQOS_PRIVATE_KEY_FILE?.trim();
-  if (!file) return null;
-  try {
-    const text = readFileSync(file, "utf8").trim();
-    return /^0x[0-9a-fA-F]{64}$/.test(text) ? (text as Hex) : null;
-  } catch {
-    return null;
-  }
 }
 
 /** Child keys stay in memory. One operator secret is enough for the recharge signature. */
@@ -165,7 +172,11 @@ function knownMachines(): Row[] {
   });
 }
 
-export async function startYard(): Promise<void> {
+/**
+ * `register` activates missing machines with the peaq SDK (the local server does this). Hosted
+ * functions skip it and sign for the machines the operator already activated.
+ */
+export async function startYard(options: { register: boolean }): Promise<void> {
   try {
     bondWei = await readBond();
   } catch (error) {
@@ -174,9 +185,9 @@ export async function startYard(): Promise<void> {
     return;
   }
 
-  const key = loadKey();
+  const key = await loadOperatorKey();
   if (!key) {
-    blocker = "Read-only mode: PEAQOS_PRIVATE_KEY is not set, so the yard replays receipts that already landed on Agung and sends nothing new.";
+    blocker = "No operator key is loaded on this server, so runs replay receipts that already landed on Agung.";
     rows = knownMachines();
     return;
   }
@@ -192,8 +203,10 @@ export async function startYard(): Promise<void> {
   const saved = loadSaved();
   rows = SPECS.map((spec) => {
     const account = spec.keyLabel ? privateKeyToAccount(childKey(key, spec.keyLabel)) : operator!;
+    const known = KNOWN_MACHINES.find((machine) => machine.actor === spec.actor && machine.address === account.address);
     const prior = saved[`${operator!.address}:${spec.machineType}`];
-    const machineId = prior?.machineId ?? null;
+    const machineId = prior?.machineId ?? known?.machineId ?? null;
+    const txHash = prior?.txHash ?? known?.activationTx ?? null;
     return {
       actor: spec.actor,
       name: spec.name,
@@ -202,14 +215,35 @@ export async function startYard(): Promise<void> {
       did: machineId ? `did:peaq:${machineId}` : `did:peaq:${account.address}`,
       balance: "0",
       machineId,
-      txHash: prior?.txHash ?? null,
-      explorer: explorer(prior?.txHash ?? null),
+      txHash,
+      explorer: explorer(txHash),
       error: null,
       account,
     };
   });
 
-  client = new PeaqosClient<"tokenomics20">({
+  if (!options.register) {
+    const missing = rows.filter((row) => row.machineId === null);
+    blocker = missing.length === 0 ? null : `Not activated on Agung: ${missing.map((row) => row.machineType).join(", ")}.`;
+    return;
+  }
+
+  const balance = await publicClient.getBalance({ address: operator.address });
+  if (balance < bondWei) {
+    blocker = `Operator ${operator.address} balance is ${formatEther(balance)} PEAQ. The entry bond is ${formatEther(bondWei)} PEAQ per machine. No activation or transfer was submitted.`;
+    for (const row of rows) row.error = blocker;
+    return;
+  }
+
+  void enqueue(() => registerAll(key, balance)).catch((error: unknown) => {
+    blocker = explain(error);
+  });
+}
+
+async function registerAll(key: Hex, starting: bigint): Promise<void> {
+  if (!operator) return;
+  const { PeaqosClient } = await import("@peaqos/peaq-os-sdk");
+  const client = new PeaqosClient<"tokenomics20">({
     rpcUrl: process.env.PEAQOS_RPC_URL?.trim() || AGUNG_RPC,
     privateKey: key,
     contracts: {
@@ -222,21 +256,6 @@ export async function startYard(): Promise<void> {
     },
     tokenomics20: { deploymentId: "agung-2026-08-28" },
   });
-
-  const balance = await publicClient.getBalance({ address: operator.address });
-  if (balance < bondWei) {
-    blocker = `Operator ${operator.address} balance is ${formatEther(balance)} PEAQ. The entry bond is ${formatEther(bondWei)} PEAQ per machine. No activation or transfer was submitted.`;
-    for (const row of rows) row.error = blocker;
-    return;
-  }
-
-  void enqueue(() => registerAll(balance)).catch((error: unknown) => {
-    blocker = explain(error);
-  });
-}
-
-async function registerAll(starting: bigint): Promise<void> {
-  if (!client || !operator) return;
   let balance = starting;
   for (const row of rows) {
     const subject = keccak256(toBytes(`rheinau.v1.${operator.address}.${row.machineType}`));
@@ -303,6 +322,17 @@ async function refreshBalances(): Promise<void> {
   );
 }
 
+async function liveAvailability(drainWei: bigint): Promise<{ available: boolean; reason: string | null }> {
+  if (!operator || !people) return { available: false, reason: blocker ?? "No operator key is loaded on this server." };
+  if (drainWei < MIN_DRAIN_WEI) {
+    return { available: false, reason: `The run reserve holds ${formatEther(drainWei)} PEAQ, below the ${formatEther(MIN_DRAIN_WEI)} PEAQ a run needs.` };
+  }
+  if (await walletsBusy().catch(() => false)) {
+    return { available: false, reason: "Another visitor's live run is using the yard wallets right now." };
+  }
+  return { available: true, reason: null };
+}
+
 export async function yardStatus(): Promise<YardStatus> {
   if (rows.length === 0) rows = knownMachines();
   try {
@@ -311,9 +341,7 @@ export async function yardStatus(): Promise<YardStatus> {
   } catch (error) {
     if (!blocker) blocker = explain(error);
   }
-  const operatorBalance = operator
-    ? formatEther(await publicClient.getBalance({ address: operator.address }).catch(() => 0n))
-    : "0";
+  const operatorWei = operator ? await publicClient.getBalance({ address: operator.address }).catch(() => 0n) : 0n;
   const writesLanded = rows.some((row) => row.txHash !== null) || transfers.some((row) => row.ok);
   const personRows: YardPerson[] = PERSON_ORDER.map((id) => ({
     id,
@@ -332,11 +360,12 @@ export async function yardStatus(): Promise<YardStatus> {
     chainId: AGUNG_DEPLOYMENT.chainId,
     deploymentId: AGUNG_DEPLOYMENT.deploymentId,
     operator: operator?.address ?? null,
-    operatorBalance,
+    operatorBalance: formatEther(operatorWei),
     bondPeaq: formatEther(bondWei),
     blocker,
-    readOnly: client === null,
+    readOnly: operator === null,
     writesLanded,
+    live: await liveAvailability(operatorWei),
     people: personRows,
     transfers: transfers.map((row) => ({ ...row })),
     machines: rows.map((row) => ({
@@ -356,7 +385,7 @@ export async function yardStatus(): Promise<YardStatus> {
 
 const settled = new Map<string, SettleResult>();
 
-type SettleInput = {
+export type SettleInput = {
   id: string;
   kind: ChainKind;
   cycle: number;
@@ -364,98 +393,54 @@ type SettleInput = {
   run: string;
 };
 
-/** With a key every page run sends fresh transfers. Without one, the yard replays receipts that already landed. */
-export function settle(input: SettleInput): Promise<SettleResult> {
-  if (!client || !operator) {
-    const known = KNOWN_RECEIPTS[input.id];
-    if (known?.ok) return Promise.resolve(known);
-    return Promise.resolve({ ok: false, error: blocker ?? "No operator key is loaded. No transaction was submitted." });
-  }
+function refuse(reason: string): SettleResult {
+  return { ok: false, replay: true, error: reason };
+}
+
+/**
+ * Every page run sends fresh transactions while it holds the yard wallets. A refusal (no key,
+ * low reserve, busy, rate limit) is marked `replay` so the page switches to confirmed receipts.
+ */
+export async function settle(input: SettleInput, visitor: Visitor): Promise<SettleResult> {
+  if (!operator || !people) return refuse(blocker ?? "No operator key is loaded on this server.");
   const key = `${input.run}:${input.id}`;
   const prior = settled.get(key);
-  if (prior?.ok) return Promise.resolve(prior);
-  return enqueue(() => settleOnce(input));
+  if (prior?.ok) return prior;
+
+  if (input.kind === "fund") {
+    const drainWei = await publicClient.getBalance({ address: operator.address });
+    if (drainWei < MIN_DRAIN_WEI) {
+      return refuse(`The run reserve holds ${formatEther(drainWei)} PEAQ, below the ${formatEther(MIN_DRAIN_WEI)} PEAQ a run needs.`);
+    }
+    const admitted = await admitRun(input.run, visitor.id);
+    if (!admitted.ok) return refuse(admitted.reason);
+  } else {
+    const held = await holdRun(input.run);
+    if (!held.ok) return refuse(held.reason);
+  }
+
+  const result = await enqueue(() => settleOnce(input));
+  if (result.ok) settled.set(key, result);
+  if (input.kind === "settlement") await releaseRun(input.run);
+  return result;
 }
 
 async function settleOnce(input: SettleInput): Promise<SettleResult> {
-  const key = `${input.run}:${input.id}`;
-  if (!client || !operator) {
-    return { ok: false, error: blocker ?? "No operator key is loaded. No transaction was submitted." };
-  }
-  const balance = await publicClient.getBalance({ address: operator.address });
-  if (balance === 0n) {
-    return {
-      ok: false,
-      error: `Operator balance is 0 PEAQ. No transaction was submitted.`,
-    };
-  }
-
+  if (!operator || !people) return refuse(blocker ?? "No operator key is loaded on this server.");
   try {
     const chainId = await publicClient.getChainId();
     if (chainId !== AGUNG_DEPLOYMENT.chainId) {
       return { ok: false, error: `RPC chain id is ${chainId}. Refusing to send off Agung 9990.` };
     }
-    if (!people) return { ok: false, error: "Owner wallets are not loaded. No transaction was submitted." };
-
-    if (input.kind === "fund") {
-      const funded = await fundRun(input.run, people);
-      settled.set(key, funded);
-      return funded;
-    }
-    if (input.kind !== "settlement") {
-      const plan = transferPlan(input.kind, people);
-      if (!plan) return { ok: false, error: "Machine wallets are not loaded. No transaction was submitted." };
-      const { amount, from, to, fromName, toName, label } = plan;
-      const sent = await sendNative(from, to, amount, fromName);
-      if (!sent.ok || !sent.hash) {
-        const failed = remember({
-          id: input.id,
-          run: input.run,
-          label,
-          amountPeaq: peaqString(amount),
-          fromName,
-          toName,
-          fromAddress: from.address,
-          toAddress: to,
-          txHash: null,
-          explorer: null,
-          ok: false,
-          error: sent.error ?? "Transfer did not land.",
-        });
-        return { ok: false, error: failed.error ?? "Transfer did not land." };
-      }
-      const row = remember({
-        id: input.id,
-        run: input.run,
-        label,
-        amountPeaq: peaqString(amount),
-        fromName,
-        toName,
-        fromAddress: from.address,
-        toAddress: to,
-        txHash: sent.hash,
-        explorer: explorer(sent.hash),
-        ok: true,
-        error: null,
-      });
-      const done: SettleResult = {
-        ok: true,
-        txHash: row.txHash ?? undefined,
-        explorer: row.explorer ?? undefined,
-        label: row.label,
-        amountPeaq: row.amountPeaq,
-        fromName: row.fromName,
-        toName: row.toName,
-        fromAddress: row.fromAddress,
-        toAddress: row.toAddress,
-      };
-      settled.set(key, done);
-      return done;
-    }
-
-    const swept = await sweepToDrain(input.run, people);
-    settled.set(key, swept);
-    return swept;
+    if (input.kind === "fund") return await fundRun(input.run, people);
+    if (input.kind === "settlement") return await sweepToDrain(input.run, people, "return", "Settlement");
+    const plan = transferPlan(input.kind, people);
+    if (!plan) return { ok: false, error: "Machine wallets are not loaded. No transaction was submitted." };
+    const pay = sendStep(input.run, input.id, plan.label, plan.from, plan.fromName, plan.to, plan.toName, plan.amount);
+    if (input.kind !== "work") return bundle([await pay], "The transfer did not land.");
+    // Lumen's report and the robot owner's pay go out together; they come from different wallets.
+    const [event, paid] = await Promise.all([submitInspection(input.run, input.cycle, input.cleanlinessMilli), pay]);
+    return bundle([event, paid], "The work payment did not land.");
   } catch (error) {
     return { ok: false, error: `Agung rejected the write: ${explain(error)}` };
   }
@@ -478,8 +463,6 @@ async function sendNative(
   amount: bigint,
   fromName: string,
 ): Promise<{ ok: boolean; hash: Hex | null; error: string | null }> {
-  const chainId = await publicClient.getChainId();
-  if (chainId !== 9990) return { ok: false, hash: null, error: `Refusing chain ${chainId}.` };
   const balance = await publicClient.getBalance({ address: from.address });
   const gasPrice = await publicClient.getGasPrice();
   const gas = 21_000n * gasPrice * 4n;
@@ -497,6 +480,67 @@ async function sendNative(
     return { ok: false, hash, error: `Transfer reverted on Agung: ${hash}` };
   }
   return { ok: true, hash, error: null };
+}
+
+/** Lumen-04 reports each inspection to EventRegistry from its own wallet, as legacy machine 352. */
+async function submitInspection(run: string, cycle: number, cleanlinessMilli: number): Promise<SettleStep> {
+  const lumen = rows.find((row) => row.actor === "drone");
+  const base = {
+    id: `${cycle}:inspection`,
+    label: "Lumen inspection event",
+    amountPeaq: "0",
+    fromName: "Lumen-04",
+    toName: "EventRegistry",
+    fromAddress: lumen?.address ?? ("0x0000000000000000000000000000000000000000" as Address),
+    toAddress: AGUNG_TOKENOMICS_10.eventRegistry as Address,
+    kind: "event" as const,
+  };
+  const finish = (step: SettleStep): SettleStep => {
+    remember({ run, ...step });
+    return step;
+  };
+  const fail = (error: string, hash: Hex | null = null) => finish({ ...base, txHash: hash, explorer: null, ok: false, error });
+  if (!lumen?.account) return fail("Lumen-04 is not loaded. No event was submitted.");
+  try {
+    if (lumenLegacyId === null) {
+      lumenLegacyId = await publicClient.readContract({
+        address: AGUNG_TOKENOMICS_10.identityRegistry,
+        abi: legacyEventAbi,
+        functionName: "machineIdOfOwner",
+        args: [lumen.address],
+      });
+    }
+    if (lumenLegacyId === 0n) {
+      lumenLegacyId = null;
+      return fail("Lumen-04 has no IdentityRegistry 1.0 id, which Agung's EventRegistry requires. No event was submitted.");
+    }
+    const report = { kind: "inspection", machine: "Lumen-04", economics20MachineId: lumen.machineId, run, cycle, cleanlinessMilli, at: new Date().toISOString() };
+    const { request } = await publicClient.simulateContract({
+      account: lumen.account,
+      address: AGUNG_TOKENOMICS_10.eventRegistry,
+      abi: legacyEventAbi,
+      functionName: "submitEvent",
+      // eventType 1 = activity, trustLevel 0 = self-reported. The timestamp must not be ahead of the block.
+      args: [
+        lumenLegacyId,
+        1,
+        0n,
+        BigInt(Math.floor(Date.now() / 1000) - 15),
+        keccak256(toBytes(JSON.stringify(report))),
+        0,
+        0n,
+        zeroHash,
+        toHex(JSON.stringify({ t: "inspection", day: cycle, cleanlinessMilli })),
+      ],
+    });
+    const wallet = createWalletClient({ account: lumen.account, chain: agung, transport: http(AGUNG_RPC) });
+    const hash = await wallet.writeContract(request);
+    const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 90_000 });
+    if (receipt.status !== "success") return fail(`Event reverted on Agung: ${hash}`, hash);
+    return finish({ ...base, txHash: hash, explorer: explorer(hash), ok: true, error: null });
+  } catch (error) {
+    return fail(`Agung rejected the inspection event: ${explain(error)}`);
+  }
 }
 
 function transferPlan(
@@ -519,6 +563,7 @@ function remember(row: ChainTransfer): ChainTransfer {
   const index = transfers.findIndex((item) => item.id === row.id && item.run === row.run);
   if (index >= 0) transfers[index] = row;
   else transfers.push(row);
+  if (transfers.length > 400) transfers.splice(0, transfers.length - 400);
   return row;
 }
 
@@ -532,7 +577,12 @@ async function sendStep(
   toName: string,
   amount: bigint,
 ): Promise<SettleStep> {
-  const sent = await sendNative(from, to, amount, fromName);
+  let sent: { ok: boolean; hash: Hex | null; error: string | null };
+  try {
+    sent = await sendNative(from, to, amount, fromName);
+  } catch (error) {
+    sent = { ok: false, hash: null, error: `Agung rejected the transfer: ${explain(error)}` };
+  }
   const step: SettleStep = {
     id,
     label,
@@ -545,6 +595,7 @@ async function sendStep(
     explorer: sent.ok && sent.hash ? explorer(sent.hash) : null,
     ok: sent.ok,
     error: sent.ok ? null : sent.error,
+    kind: "transfer",
   };
   remember({ run, ...step });
   return step;
@@ -578,7 +629,9 @@ async function budgetFor(address: Address, cents: number): Promise<bigint> {
 async function fundRun(run: string, owners: Record<PersonId, PrivateKeyAccount>): Promise<SettleResult> {
   const kepler = rows.find((row) => row.actor === "robot");
   if (!kepler) return { ok: false, error: "Kepler-01 is not loaded. No transaction was submitted." };
-  const steps: SettleStep[] = [];
+  // A run that never reached its settlement (closed tab, lost lease) left money in the loop. Return it first.
+  const recovered = await sweepToDrain(run, owners, "recover", "Unfinished run returned");
+  const steps: SettleStep[] = [...(recovered.steps ?? [])];
   const city = await sendStep(run, "fund-city", "Power budget", owners.drain, PERSON_META.drain.name, owners.city.address, PERSON_META.city.name, await budgetFor(owners.city.address, CITY_BUDGET_CENTS));
   steps.push(city);
   if (city.ok) {
@@ -590,22 +643,29 @@ async function fundRun(run: string, owners: Record<PersonId, PrivateKeyAccount>)
 }
 
 /** Every wallet in the loop returns what it holds to the Drain, so the next run starts from the same budget. */
-async function sweepToDrain(run: string, owners: Record<PersonId, PrivateKeyAccount>): Promise<SettleResult> {
+async function sweepToDrain(
+  run: string,
+  owners: Record<PersonId, PrivateKeyAccount>,
+  prefix: string,
+  label: string,
+): Promise<SettleResult> {
   const kepler = rows.find((row) => row.actor === "robot")?.account;
   const battery = rows.find((row) => row.actor === "battery")?.account;
   const sources: { id: string; name: string; account: PrivateKeyAccount | null | undefined }[] = [
-    { id: "return-plant-owner", name: PERSON_META.plantOwner.name, account: owners.plantOwner },
-    { id: "return-robot-owner", name: PERSON_META.robotOwner.name, account: owners.robotOwner },
-    { id: "return-battery", name: "Battery", account: battery },
-    { id: "return-kepler", name: "Kepler-01", account: kepler },
-    { id: "return-city", name: PERSON_META.city.name, account: owners.city },
+    { id: "plant-owner", name: PERSON_META.plantOwner.name, account: owners.plantOwner },
+    { id: "robot-owner", name: PERSON_META.robotOwner.name, account: owners.robotOwner },
+    { id: "battery", name: "Battery", account: battery },
+    { id: "kepler", name: "Kepler-01", account: kepler },
+    { id: "city", name: PERSON_META.city.name, account: owners.city },
   ];
-  const steps: SettleStep[] = [];
-  for (const source of sources) {
-    if (!source.account) continue;
-    const amount = spendable(await publicClient.getBalance({ address: source.account.address }));
-    if (amount === 0n) continue;
-    steps.push(await sendStep(run, source.id, "Settlement", source.account, source.name, owners.drain.address, PERSON_META.drain.name, amount));
-  }
+  const sends = await Promise.all(
+    sources.map(async (source) => {
+      if (!source.account) return null;
+      const amount = spendable(await publicClient.getBalance({ address: source.account.address }));
+      if (amount === 0n) return null;
+      return sendStep(run, `${prefix}-${source.id}`, label, source.account, source.name, owners.drain.address, PERSON_META.drain.name, amount);
+    }),
+  );
+  const steps = sends.filter((step): step is SettleStep => step !== null);
   return bundle(steps, "No wallet held anything to return. No settlement was submitted.");
 }

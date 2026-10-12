@@ -32,6 +32,9 @@ export const CHAIN_KINDS = ["fund", "power", "work", "recharge", "settlement"] a
 
 export type ChainKind = (typeof CHAIN_KINDS)[number];
 
+/** A PEAQ transfer, or a machine event written to EventRegistry. */
+export type LegKind = "transfer" | "event";
+
 export type TransferRow = {
   id: string;
   label: string;
@@ -44,6 +47,9 @@ export type TransferRow = {
   explorer: string | null;
   ok: boolean;
   error: string | null;
+  kind?: LegKind;
+  /** Receipt from the confirmed replay run rather than a write sent for this page. */
+  replay?: boolean;
 };
 
 export type ChainJob = {

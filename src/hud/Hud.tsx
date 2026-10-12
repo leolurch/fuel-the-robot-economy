@@ -2,7 +2,6 @@ import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Engine } from "../economy/engine.ts";
 import { ACTOR_ORDER, PERSON_ORDER, PHASES, RUN_CYCLES, formatPeaq, inspectionLine, shortAddress } from "../economy/model.ts";
 import type { ActorId, Flow, PartyId, PersonId, Snapshot, Speed, TransferRow } from "../economy/types.ts";
-import { ACTIVITY_STATUS } from "../peaq/activityStatus.ts";
 import { KNOWN_MACHINES } from "../peaq/knownMachines.ts";
 import { AGUNG_EXPLORER_ACCOUNT, AGUNG_EXPLORER_TX } from "../peaq/landed.ts";
 import { useAgungStatus } from "../peaq/useAgung.ts";
@@ -96,6 +95,9 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
   const generation = useRef(snap.resetGeneration);
   const [expanded, setExpanded] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [replays, setReplays] = useState<Record<string, string>>({});
+  const [liveRuns, setLiveRuns] = useState<string[]>([]);
+  const mode = runMode(yard, replays[run] ?? null, liveRuns.includes(run));
 
   useEffect(() => {
     if (generation.current !== snap.resetGeneration) {
@@ -105,7 +107,10 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
     for (const job of snap.chainJobs) {
       if (posted.current.has(job.id)) continue;
       posted.current.add(job.id);
-      void settleJob(job, run).then((result) => {
+      const onReplay = (reason: string) => setReplays((prior) => (prior[run] ? prior : { ...prior, [run]: reason }));
+      void settleJob(job, run, onReplay).then((result) => {
+        const replay = result.replay === true;
+        if (job.kind === "fund" && result.ok && !replay) setLiveRuns((prior) => (prior.includes(run) ? prior : [...prior, run]));
         if (result.steps && result.steps.length > 0) {
           for (const step of result.steps) {
             engine.recordTransfer({
@@ -120,6 +125,8 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
               explorer: step.explorer,
               ok: step.ok,
               error: step.error,
+              kind: step.kind,
+              replay,
             });
           }
           if (!result.ok && result.steps.every((step) => step.ok)) {
@@ -151,6 +158,7 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
           explorer: result.explorer ?? null,
           ok: result.ok,
           error: result.error ?? null,
+          replay,
         });
       });
     }
@@ -181,7 +189,7 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-slate-950 text-white">
-      <Header agung={agung} yard={yard} onHelp={() => setHelpOpen(true)} />
+      <Header agung={agung} mode={mode} onHelp={() => setHelpOpen(true)} />
       <p className="shrink-0 bg-amber-100 px-3 py-2 text-[13px] font-semibold leading-snug text-slate-950 sm:px-4 sm:text-base lg:text-lg">
         {CIRCLE}
       </p>
@@ -223,8 +231,7 @@ export function Hud({ engine, snap }: { engine: Engine; snap: Snapshot }) {
                 <WalletCard key={id} id={id} snap={snap} yard={yard} live={live} />
               ))}
             </div>
-            <ActivityNote />
-            <TransactionPanel snap={snap} />
+            <TransactionPanel snap={snap} mode={mode} />
           </aside>
         )}
       </div>
@@ -330,17 +337,17 @@ function PowerMeter({ snap }: { snap: Snapshot }) {
   );
 }
 
-function ActivityNote() {
-  return (
-    <section className="min-w-0 overflow-hidden rounded-2xl border border-rose-300/30 bg-rose-500/10 p-3">
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-rose-200">Not on chain yet</p>
-      <p className="mt-1 text-sm font-semibold text-white">{ACTIVITY_STATUS.label}</p>
-      <p className="mt-0.5 text-sm leading-snug text-white/70">{ACTIVITY_STATUS.error}</p>
-    </section>
-  );
+type RunMode = { live: boolean; title: string; detail: string | null } | null;
+
+function runMode(yard: YardStatus | null, replayReason: string | null, admitted: boolean): RunMode {
+  if (replayReason) return { live: false, title: "Replaying a confirmed run", detail: replayReason };
+  if (admitted) return { live: true, title: "Live on Agung", detail: "This run is sending fresh transactions right now." };
+  if (yard === null) return null;
+  if (yard.live?.available) return { live: true, title: "Live on Agung", detail: "Each run sends fresh transactions from the yard's wallets." };
+  return { live: false, title: "Replaying a confirmed run", detail: yard.live?.reason ?? yard.blocker };
 }
 
-function TransactionPanel({ snap }: { snap: Snapshot }) {
+function TransactionPanel({ snap, mode }: { snap: Snapshot; mode: RunMode }) {
   const rows = snap.transfers;
   const confirmed = rows.filter((row) => realHash(row.hash, row.ok)).length;
   return (
@@ -349,10 +356,27 @@ function TransactionPanel({ snap }: { snap: Snapshot }) {
         <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-white/55">Agung receipts</h2>
         <p className="shrink-0 text-xs font-semibold text-emerald-300">{confirmed} confirmed</p>
       </div>
-      <p className="mt-1 text-sm leading-snug text-white/70">
+      {mode ? (
+        <div
+          className={`mt-2 rounded-xl px-2.5 py-2 ring-1 ${mode.live ? "bg-emerald-400/10 ring-emerald-300/30" : "bg-sky-400/10 ring-sky-300/25"}`}
+          role="status"
+        >
+          <p className={`flex items-center gap-1.5 text-sm font-semibold ${mode.live ? "text-emerald-200" : "text-sky-200"}`}>
+            <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${mode.live ? "animate-pulse bg-emerald-400" : "bg-sky-300"}`} />
+            {mode.title}
+          </p>
+          {mode.detail ? <p className="mt-0.5 text-[13px] leading-snug text-white/70">{mode.detail}</p> : null}
+          {mode.live ? null : (
+            <p className="mt-0.5 text-[13px] leading-snug text-white/70">
+              The hashes below are a full earlier run by the same machines, each confirmed on Agung.
+            </p>
+          )}
+        </div>
+      ) : null}
+      <p className="mt-2 text-sm leading-snug text-white/70">
         {snap.runComplete
           ? "Settled. Funds reset for the next run. Every hash opens on Subscan."
-          : "Each payment in the loop links to its transaction on the Agung testnet."}
+          : "Each payment and each Lumen inspection event links to its transaction on the Agung testnet."}
       </p>
       {rows.length === 0 ? (
         <p className="mt-2 rounded-xl bg-white/5 px-2.5 py-2 text-sm text-white/60">
@@ -375,8 +399,15 @@ function TransferItem({ row }: { row: TransferRow }) {
   return (
     <li className="min-w-0 overflow-hidden rounded-xl bg-white/5 px-2.5 py-2">
       <div className="flex min-w-0 items-baseline justify-between gap-2">
-        <p className="min-w-0 truncate text-sm font-semibold">{row.label}</p>
-        <p className="shrink-0 font-mono text-sm text-amber-200">{row.amountPeaq} PEAQ</p>
+        <p className="min-w-0 truncate text-sm font-semibold">
+          {row.label}
+          {row.replay ? <span className="ml-1.5 rounded bg-sky-400/15 px-1 py-px text-[11px] font-semibold text-sky-200">replay</span> : null}
+        </p>
+        {row.kind === "event" ? (
+          <p className="shrink-0 rounded bg-emerald-400/15 px-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-200">Event</p>
+        ) : (
+          <p className="shrink-0 font-mono text-sm text-amber-200">{row.amountPeaq} PEAQ</p>
+        )}
       </div>
       <p className="mt-1 truncate text-sm text-white/80">
         {row.fromName} <span className="text-white/40">→</span> {row.toName}
@@ -517,9 +548,8 @@ function chainText(agung: AgungRead): { text: string; tone: string } {
   return { text: `Agung ${agung.chainId} · block ${block}`, tone: "bg-emerald-400" };
 }
 
-function Header({ agung, yard, onHelp }: { agung: AgungRead; yard: YardStatus | null; onHelp: () => void }) {
+function Header({ agung, mode, onHelp }: { agung: AgungRead; mode: RunMode; onHelp: () => void }) {
   const chain = chainText(agung);
-  const mode = yard === null ? null : yard.readOnly || !yard.operator ? "Replaying confirmed receipts" : "Live writer";
   return (
     <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-slate-950 px-3 py-2 sm:px-4">
       <div className="flex min-w-0 items-center gap-2.5">
@@ -542,10 +572,12 @@ function Header({ agung, yard, onHelp }: { agung: AgungRead; yard: YardStatus | 
         </span>
         {mode ? (
           <span
-            className="hidden rounded-full bg-sky-400/10 px-2.5 py-1 text-xs font-medium text-sky-200 ring-1 ring-sky-300/20 lg:inline-flex"
-            title={yard?.blocker ?? undefined}
+            className={`hidden rounded-full px-2.5 py-1 text-xs font-medium ring-1 lg:inline-flex ${
+              mode.live ? "bg-emerald-400/10 text-emerald-200 ring-emerald-300/25" : "bg-sky-400/10 text-sky-200 ring-sky-300/20"
+            }`}
+            title={mode.detail ?? undefined}
           >
-            {mode}
+            {mode.live ? "Live on Agung" : "Replay"}
           </span>
         ) : null}
         <span aria-hidden className={`h-2.5 w-2.5 rounded-full md:hidden ${chain.tone}`} title={chain.text} />
@@ -656,7 +688,7 @@ function HowItWorks({ open, onClose }: { open: boolean; onClose: () => void }) {
             <li>Dust settles on the panels and output falls.</li>
             <li><b className="text-white">Lumen-04</b>, the drone, inspects the rows and reports them dirty.</li>
             <li><b className="text-white">Kepler-01</b>, the rover, washes every row and routes around a blocked one.</li>
-            <li>Lumen flies again and hashes the recovered yield into a proof.</li>
+            <li>Lumen flies again, hashes the recovered yield into a proof, and reports the inspection to peaq's EventRegistry.</li>
             <li>The city pays the plant owner 0.05 PEAQ for that power.</li>
             <li>The plant owner pays the robot owner 0.03 PEAQ for cleaning and inspection.</li>
             <li>Kepler pays the Battery 0.01 PEAQ for 22 kWh, then the plant refills the battery.</li>
@@ -672,6 +704,8 @@ function HowItWorks({ open, onClose }: { open: boolean; onClose: () => void }) {
           <ul className="mt-2 list-disc space-y-1.5 pl-5 marker:text-emerald-300/70">
             <li>Four machine IDs in MachineRegistry, activated with the peaq SDK: the plant treasury, Kepler-01, Lumen-04, and the Battery.</li>
             <li>Every payment of a full run is a PEAQ transfer with a receipt: the run budget, power, robot pay, recharges, and the settlement. Machine IDs and hashes link to Subscan.</li>
+            <li>Each day Lumen-04 signs an inspection event from its own wallet into Agung's EventRegistry, as machine 352. Its hash sits in the receipts next to the payment it unlocks.</li>
+            <li>Opening the page starts a live run: a server-side writer signs fresh transactions for this visit. The keys never reach the browser.</li>
             <li>Live reads of the chain id, current block, and contract bytecode, straight from the public Agung RPC.</li>
             <li>
               <code className="rounded bg-white/10 px-1 font-mono text-sm">npm run verify</code> recomputes the machine IDs and checks every receipt.
@@ -682,8 +716,11 @@ function HowItWorks({ open, onClose }: { open: boolean; onClose: () => void }) {
           <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-200">Simulated</h3>
           <ul className="mt-2 list-disc space-y-1.5 pl-5 marker:text-sky-200/70">
             <li>The rover, drone, soiling, and battery physics run in the browser. There is no physical hardware.</li>
-            <li>Without a funded key, the page replays the receipts above instead of sending new transfers.</li>
-            <li>Lumen's activity event is not on chain: Agung's EventRegistry reverts the call, so no hash is shown.</li>
+            <li>
+              One live run at a time shares the yard's wallets. If another visitor's run is in progress, the rate limit is
+              reached, or the run reserve is low, the page says so and replays a full earlier run whose receipts are all on
+              Agung.
+            </li>
           </ul>
         </section>
         <section>

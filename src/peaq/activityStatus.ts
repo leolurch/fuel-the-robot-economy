@@ -1,16 +1,10 @@
 /**
- * Lumen's inspection was simulated against EventRegistry on Agung (chain id 9990).
- * The call reverts with empty data for both the operator and Lumen-04.
- * No transaction was submitted, so there is no receipt hash.
+ * Lumen-04's first inspection event on Agung's EventRegistry (Tokenomics 1.0, 9-argument submitEvent),
+ * submitted from Lumen's own wallet as legacy machine 352. Every live run adds one more per day.
  */
-export const ACTIVITY_STATUS: {
-  ok: boolean;
-  hash: string | null;
-  label: string;
-  error: string;
-} = {
-  ok: false,
-  hash: null,
+export const ACTIVITY_STATUS = {
+  ok: true,
+  hash: "0x8415da15b00a11281e2cfac0a0178c5584aed742d7ef9014392ad3e10d38612b",
   label: "Lumen activity event",
-  error: "Did not land. Agung EventRegistry reverts Lumen's inspection. No receipt hash.",
-};
+  error: "Lumen-04 reported its inspection to Agung's EventRegistry as machine 352 (activity, self-reported).",
+} as const;

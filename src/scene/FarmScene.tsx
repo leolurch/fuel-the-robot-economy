@@ -8,7 +8,6 @@ import { FIELD_X, FIELD_Z } from "../world/layout.ts";
 
 /** Low enough that a band of sky shows above the city, so the sun is visible near the horizon. */
 const CAMERA_TARGET: [number, number, number] = [FIELD_X - 0.2, 2.2, FIELD_Z - 3];
-import { hasYardServer } from "../peaq/useYardChain.ts";
 import { frameMeter, noteFrame } from "./frameMeter.ts";
 import { Ground } from "./Ground.tsx";
 import {
@@ -26,6 +25,12 @@ import { MoneyFlow } from "./MoneyFlow.tsx";
 import { Panels } from "./Panels.tsx";
 import { SkyAndSun } from "./Sky.tsx";
 import { SKY_FAR } from "./sun.ts";
+
+
+/** Frame-rate notes go to the local yard server's log only; hosted pages never post them. */
+function logsToDevServer(): boolean {
+  return ["localhost", "127.0.0.1"].includes(window.location.hostname);
+}
 
 function FrameCamera() {
   const [narrow, setNarrow] = useState(() => window.innerWidth < 760);
@@ -61,7 +66,7 @@ function AdaptiveDpr() {
     adjusted.current = true;
     const calls = gl.info.render.calls;
     if (frameMeter.fps >= 28) {
-      if (!hasYardServer()) return;
+      if (!logsToDevServer()) return;
       void fetch("/api/client-log", {
         method: "POST",
         body: `adapt-skip ${frameMeter.fps.toFixed(2)} calls=${calls}`,
@@ -76,7 +81,7 @@ function AdaptiveDpr() {
       frameMeter.startedAt = 0;
       frameMeter.fps = 0;
     }, 0);
-    if (!hasYardServer()) return;
+    if (!logsToDevServer()) return;
     void fetch("/api/client-log", {
       method: "POST",
       body: `adapt-dpr ${next.toFixed(3)} from ${fps.toFixed(2)} calls=${calls}`,

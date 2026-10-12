@@ -11,12 +11,14 @@
     "lint": "oxlint",
     "preview": "vite preview --host 0.0.0.0 --port 4317 --strictPort",
     "sim": "node --experimental-strip-types src/economy/selftest.ts",
-    "verify": "node --experimental-strip-types --no-warnings scripts/verify-agung.ts"
+    "verify": "node --experimental-strip-types --no-warnings scripts/verify-agung.ts",
+    "build:vercel": "npm run build && node --experimental-strip-types --no-warnings scripts/build-vercel.ts"
   },
   "dependencies": {
     "@peaqos/peaq-os-sdk": "^0.8.0",
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.8.1",
+    "@vercel/blob": "^2.8.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "three": "^0.186.1",
@@ -29,6 +31,7 @@
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "oxlint": "^1.81.0",
+    "rolldown": "^1.2.11",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
