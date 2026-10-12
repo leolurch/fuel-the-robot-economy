@@ -10,7 +10,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview --host 0.0.0.0 --port 4317 --strictPort",
-    "sim": "node --experimental-strip-types src/economy/selftest.ts"
+    "sim": "node --experimental-strip-types src/economy/selftest.ts",
+    "verify": "node --experimental-strip-types --no-warnings scripts/verify-agung.ts"
   },
   "dependencies": {
     "@peaqos/peaq-os-sdk": "^0.8.0",

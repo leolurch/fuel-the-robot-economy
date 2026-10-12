@@ -1,11 +1,10 @@
 import { PeaqosClient } from "@peaqos/peaq-os-sdk";
 import { createPublicClient, formatEther, http, keccak256, toBytes, type Hex } from "viem";
 import { generatePrivateKey } from "viem/accounts";
-import { KNOWN_RECEIPTS } from "../server/chain.ts";
 import { AGUNG_RPC, AGUNG_TOKENOMICS_10 } from "../src/peaq/agung.ts";
 import { AGUNG_DEPLOYMENT } from "../src/peaq/deployment.ts";
 import { KNOWN_MACHINES, YARD_OPERATOR } from "../src/peaq/knownMachines.ts";
-import { LANDED_TRANSFERS } from "../src/peaq/landed.ts";
+import { KNOWN_RECEIPTS, LANDED_TRANSFERS } from "../src/peaq/landed.ts";
 
 const rpc = process.env.PEAQOS_RPC_URL?.trim() || AGUNG_RPC;
 const client = createPublicClient({ transport: http(rpc, { timeout: 20_000 }) });
