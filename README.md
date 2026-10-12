@@ -13,9 +13,9 @@ Built for the [Germany side track: Advance the Machine Economy with peaq](https:
 Most "robot fleet" demos stop at telemetry. Rheinau closes the economic loop around one real job:
 
 1. **Proof of work, by a machine.** Lumen-04 (drone) inspects the array before and after the wash and hashes the recovered yield into a proof, using the same `computeDataHash` bytes as the peaq SDK.
-2. **Payment released by that proof.** The plant sells the recovered power, then pays the robot owner for Kepler-01's cleaning and Lumen-04's inspection.
-3. **Machine-to-machine energy purchase.** Kepler-01 pays BESS-2 (battery) for 22 kWh to recharge, and still keeps a surplus. The plant refills the battery from its own generation.
-4. **Settlement.** After three days, the owners' earnings flow back and the circle closes: residents pay the city rent, the city buys the plant's energy, and the plant pays for the machines that keep it producing.
+2. **Payment released by that proof.** The city buys the recovered power from the plant owner, and the plant owner pays the robot owner for Kepler-01's cleaning and Lumen-04's inspection.
+3. **Machine-to-machine energy purchase.** Kepler-01 pays the Battery for 22 kWh to recharge from its own wallet. The plant refills the Battery from its own generation.
+4. **A loop that can run forever.** A Drain wallet funds each run (the city's power budget and Kepler's recharge budget). After three days, the plant owner, the robot owner, and the Battery send everything back to the Drain, so the next run starts from the same budget and only gas is spent.
 
 This is the listing's "two machines, one deal" idea (a robot paying a charger) in an energy DePIN, with identity, proof, and settlement in one working loop rather than five partial features.
 
@@ -23,56 +23,51 @@ This is the listing's "two machines, one deal" idea (a robot paying a charger) i
 
 | Real on Agung (chain id 9990) | Simulated |
 | --- | --- |
-| **4 machine IDs** in MachineRegistry, activated with `@peaqos/peaq-os-sdk` `activateMachine` (plant treasury, Kepler-01, Lumen-04, BESS-2), all owned by the yard operator | Rover, drone, soiling, and battery physics (browser, no hardware) |
-| **12 PEAQ transfers with receipts**: rent, power, robot pay, wash wage, inspection fee, recharge, and the settlement. Every hash links to [Subscan](https://agung-testnet.subscan.io) | Without a funded key, the page replays those receipts instead of sending new ones |
-| **A full live run** sent by the yard server itself: 4 fresh activations under a second operator, then all 12 payments of a three-day run, including Kepler-01 paying BESS-2 from its own wallet each day ([details](#live-run-on-agung)) | |
+| **4 machine IDs** in MachineRegistry, activated with `@peaqos/peaq-os-sdk` `activateMachine` (plant treasury, Kepler-01, Lumen-04, Battery), all owned by the yard operator | Rover, drone, soiling, and battery physics (browser, no hardware) |
+| **Every payment of a full run is a PEAQ transfer with a receipt**: the run budget, power, robot pay, recharges, and the return to the Drain, 14 transfers in all, sent by the yard server itself. Every hash links to [Subscan](https://agung-testnet.subscan.io) | Without a funded key, the page replays that run's receipts instead of sending new ones |
 | Live reads: chain id, current block, MachineRegistry, DID precompile, and EventRegistry bytecode, plus wallet balances over the public RPC | Lumen's **activity event is not on chain**: Agung's EventRegistry reverts the call (see below) |
 
-The four `activateMachine` transactions are linked below and from each machine card. Do not take the labels on trust:
+Do not take the labels on trust:
 
 ```bash
 npm run verify
 ```
 
-This recomputes each machine ID with the peaq SDK, checks that MachineRegistry reports the operator as owner, and fetches every receipt from Agung: the replayed set (4 activations, 12 payments) and the live run (4 activations, Kepler's float, 12 payments, each matched on sender, recipient, and amount).
+This recomputes each machine ID with the peaq SDK, checks that MachineRegistry reports the operator as owner, fetches the four activation receipts, and matches every transfer of the replayed run on sender, recipient, and amount.
 
-<details>
-<summary>Machine IDs and a few receipts</summary>
+### Machines
 
 | Machine | Address | MachineRegistry ID | Activation |
 | --- | --- | --- | --- |
-| Rheinau treasury | [`0x90f7…575C`](https://agung-testnet.subscan.io/account/0x90f700f3645b7d062b4520fEcB12E7a1Db0F575C) | `102441207943741495815144671880889482642676067611685166339896603723990339550998` | [`0x03ce…ad78`](https://agung-testnet.subscan.io/tx/0x03cebbe41c47450d51ecbf48a76e219112692b50eeceb8b143af15a13428ad78) |
-| Kepler-01 (rover) | [`0x8D63…b77E`](https://agung-testnet.subscan.io/account/0x8D63581101AD3DE66DCF1c2Ab569B6c442e2b77E) | `108602975430599403666987812419548965340727236481014319489660215287370279879996` | [`0x5b0b…836c`](https://agung-testnet.subscan.io/tx/0x5b0b19e25dbaa639c91d938c85def41956c7974b38d81bd90d6f03cb3933836c) |
-| Lumen-04 (drone) | [`0x4264…F138`](https://agung-testnet.subscan.io/account/0x42647B681D98961A45f4fc6e4Bc5F5d56892F138) | `88409303619999558588125362065661591412349648541783424028499915752405324092273` | [`0x8e3b…efdf`](https://agung-testnet.subscan.io/tx/0x8e3bd0dd6ec7733e2f365a54f0e6da94b659ae70801333b77fe5d8230662efdf) |
-| BESS-2 (battery) | [`0x0fF7…b943`](https://agung-testnet.subscan.io/account/0x0fF7df529aD2C19DF6637a8b1C148C268C3Eb943) | `106466828269666555797166757514327820279976210156543034156017671456103315692484` | [`0xda47…55f8`](https://agung-testnet.subscan.io/tx/0xda4782a80e5f94269cd82342d68e420abdb976314dfe936ac409e994646255f8) |
+| Rheinau treasury (plant) | [`0x8a61…d23A`](https://agung-testnet.subscan.io/account/0x8a61248e23e04b97A0A42A87D09459573478d23A) | `33972125727311862102242550464936382332590305066238494161796118837764432459771` | [`0xec8a…1859`](https://agung-testnet.subscan.io/tx/0xec8a622a893f77ed675902751ea196e5336ad11339a0bd3fc34e50f6d33c1859) |
+| Kepler-01 (rover) | [`0xa389…0931`](https://agung-testnet.subscan.io/account/0xa3893E09F5546B56B6e845ad194e28a216730931) | `1962884760408859527843867200144780974073261720970703856069487751650844150575` | [`0xde6e…b990`](https://agung-testnet.subscan.io/tx/0xde6ee8f2b2b2b6154034bb7ea763865c9616241a61484a284dabedaa0517b990) |
+| Lumen-04 (drone) | [`0x77cc…20d9`](https://agung-testnet.subscan.io/account/0x77cc0A6aeA9F14c842251aE1384E45A3F30320d9) | `70771729342491203195750444655678312409844457848436599576321158744592664857524` | [`0xd25a…b671`](https://agung-testnet.subscan.io/tx/0xd25a7b8a143b87a9ee0418d5b1370c75f902f1367f890d367535a0390030b671) |
+| Battery (machine type BESS-2) | [`0x6F8A…df5d`](https://agung-testnet.subscan.io/account/0x6F8A86803dafE766F6381F781D5003BC5aa2df5d) | `23561826428746862383207998597570184258462227245211301004858601842139846427384` | [`0xae8d…dcf5`](https://agung-testnet.subscan.io/tx/0xae8de92ad5772c5d0fb4084316917235325b0e6c5200cfe12aa2065c666edcf5) |
 
-- Kepler-01 pays BESS-2 for a recharge: [`0xf27f…ec1c`](https://agung-testnet.subscan.io/tx/0xf27f9652c6af53f31f4fae33a1764cbb12f3fb57b1991b090f8fdfd9d1ecec1c)
-- Treasury pays Kepler-01 the wash wage: [`0xfb92…1164`](https://agung-testnet.subscan.io/tx/0xfb92dc648fdb91f668842e3d813c46cf3ac6e7fe3973d0e6d69408b31c2e1164)
-- Plant owner pays robot owner for cleaning and inspection: [`0xb636…7dd0`](https://agung-testnet.subscan.io/tx/0xb636c5d73105481104db2e75405fc6500f5e21e317d95171d0060f9a06877dd0)
-- Closing settlement: [`0xe36c…f6e7`](https://agung-testnet.subscan.io/tx/0xe36ca39cad2d37cdc69900a460cfa267c5209aa2d9cd19ae157660c9b296f6e7)
+The operator [`0x8a61…d23A`](https://agung-testnet.subscan.io/account/0x8a61248e23e04b97A0A42A87D09459573478d23A) was funded from the peaq Gas Station. Its wallet is also the Drain. The city, plant owner, robot owner, and machine wallets are derived from its key in memory.
+
+### One confirmed run
+
+The page replays this run when no key is loaded. The legs are in [`src/peaq/replayRun.ts`](src/peaq/replayRun.ts). The Drain sent out 0.18 PEAQ and got 0.18 PEAQ back.
+
+| Step | Amount (PEAQ) | From → To | Receipt |
+| --- | --- | --- | --- |
+| Start: power budget | 0.15 | Drain → City | [`0xc2cb…e0ce`](https://agung-testnet.subscan.io/tx/0xc2cb0378c703d3d15b6bae922ba66587e960a04e44a91f107db8281c8be1e0ce) |
+| Start: recharge budget | 0.03 | Drain → Kepler-01 | [`0x7a27…0671`](https://agung-testnet.subscan.io/tx/0x7a27c4b6926054fdebe908e7b1485727d1cbdde423658c8e3c06f99e3e750671) |
+| Day 1 power | 0.05 | City → Plant owner | [`0x4ce9…69ec`](https://agung-testnet.subscan.io/tx/0x4ce9f0b8e5122bb3545b75ec1a70ba07cd8bcf7d0cc929793e80fce0c23769ec) |
+| Day 1 cleaning and inspection | 0.03 | Plant owner → Robot owner | [`0x3c4c…2210`](https://agung-testnet.subscan.io/tx/0x3c4c399d25ac257c2d81884e3898a376f89fcc511fdeafde6422a157c8f42210) |
+| Day 1 recharge, 22 kWh | 0.01 | Kepler-01 → Battery | [`0x375a…caf9`](https://agung-testnet.subscan.io/tx/0x375af72cd7e116405ff4d733f46d14ff1862d20fde9b23aed62593f074eecaf9) |
+| Day 2 power | 0.05 | City → Plant owner | [`0x0a32…baae`](https://agung-testnet.subscan.io/tx/0x0a326791f47ce144e394e3361bebf78affc739e4847942c9142124c0e388baae) |
+| Day 2 cleaning and inspection | 0.03 | Plant owner → Robot owner | [`0x236c…e05d`](https://agung-testnet.subscan.io/tx/0x236cbae29542cbd77364e0bb736108f8745bfee5779ba27fe34ded038970e05d) |
+| Day 2 recharge, 22 kWh | 0.01 | Kepler-01 → Battery | [`0xed63…5ed7`](https://agung-testnet.subscan.io/tx/0xed6381bd6999927dd992e7b9223127f9366359c6814ec604159e92522bea5ed7) |
+| Day 3 power | 0.05 | City → Plant owner | [`0xa39e…09de`](https://agung-testnet.subscan.io/tx/0xa39e8dc0c458c90aec4474bd2631613126c58579ae2998908397a9cc791a09de) |
+| Day 3 cleaning and inspection | 0.03 | Plant owner → Robot owner | [`0x9dc5…9b2b`](https://agung-testnet.subscan.io/tx/0x9dc52fc10867fc3a393d1fa8451327a5843688311545cb7b9f9577eba42c9b2b) |
+| Day 3 recharge, 22 kWh | 0.01 | Kepler-01 → Battery | [`0x3cb2…5257`](https://agung-testnet.subscan.io/tx/0x3cb25cf5233bb906c1b25277f202fe683ad3e63d79f39ed01894fb695f7b5257) |
+| End: back to the Drain | 0.06 | Plant owner → Drain | [`0x9699…028f`](https://agung-testnet.subscan.io/tx/0x969960b4b79fce8d1ff004609201b4f5ac5f1db31575a3e0ce001510ca2f028f) |
+| End: back to the Drain | 0.09 | Robot owner → Drain | [`0x6134…69b0`](https://agung-testnet.subscan.io/tx/0x6134a4b20e9a682fd0f65c6e3571a27742d143950247e2d829cd27ab30cf69b0) |
+| End: back to the Drain | 0.03 | Battery → Drain | [`0xdbb3…7591`](https://agung-testnet.subscan.io/tx/0xdbb3fc15913bc4c7895f51f50a2155432967492f0e3d52d700c33bac30677591) |
 
 Subscan shows Agung's testnet token as AGNG. The app calls it PEAQ.
-
-</details>
-
-### Live run on Agung
-
-With a funded key loaded, the yard server sent one complete three-day run on its own, with no hand-made transactions. Operator [`0x8a61…d23A`](https://agung-testnet.subscan.io/account/0x8a61248e23e04b97A0A42A87D09459573478d23A) was funded from the peaq Gas Station, activated four new machine IDs, gave Kepler-01 a 0.1 PEAQ operating float ([`0xd9b2…cdfb`](https://agung-testnet.subscan.io/tx/0xd9b25cb256a65bf6e9be15728890af97d592a2fe93b57d7eea2eab6f0f05cdfb)), and then sent each payment as the page reached it. The full list, with addresses and machine IDs, is in [`scripts/live-run.ts`](scripts/live-run.ts).
-
-| Payment | Amount | From → To | Receipt |
-| --- | --- | --- | --- |
-| Apartment rent | 0.05 | Residents → City | [`0x4159…c5eb`](https://agung-testnet.subscan.io/tx/0x4159aa0a4f850a98b3f7fa6853bc3267506722f14ffda7a04394fe49bf31c5eb) |
-| Day 1 power | 0.05 | Residents → Plant owner | [`0x856a…edda`](https://agung-testnet.subscan.io/tx/0x856a256a49e1a9cf12729ddbf82029f89f8f4a3e109c92051442b9b8dabcedda) |
-| Day 1 cleaning and inspection | 0.03 | Plant owner → Robot owner | [`0x7550…7e3c`](https://agung-testnet.subscan.io/tx/0x75507a1f898c2753c5e0ec0a380f90db503cacd284a60c1198ebcccdac047e3c) |
-| Day 1 recharge, 22 kWh | 0.01 | Kepler-01 → BESS-2 | [`0xa9e9…96cb`](https://agung-testnet.subscan.io/tx/0xa9e92e6b9f92d024e811d79427de993708dc6248b66e4882f47a8dbb6d4496cb) |
-| Day 2 power | 0.05 | Residents → Plant owner | [`0x4c64…a034`](https://agung-testnet.subscan.io/tx/0x4c64684800a3df9dd2e74ce5eb9232759f0b4dd00459dd9c01ba98f406faa034) |
-| Day 2 cleaning and inspection | 0.03 | Plant owner → Robot owner | [`0x5de2…2665`](https://agung-testnet.subscan.io/tx/0x5de2f24b93346cb71ce15d7cc08969d4a6cc9d7aba9db6861d81f30900fe2665) |
-| Day 2 recharge, 22 kWh | 0.01 | Kepler-01 → BESS-2 | [`0x550d…53cd`](https://agung-testnet.subscan.io/tx/0x550dd2b74d9b5e03d1d9352b7f69e4295a9c4fafcdcb32e6f42dff96436753cd) |
-| Day 3 power | 0.05 | Residents → Plant owner | [`0x4c3f…ef60`](https://agung-testnet.subscan.io/tx/0x4c3fe0928984bb5e67924a0df50fc3f29d464753039e2e8e7545669b2badef60) |
-| Day 3 cleaning and inspection | 0.03 | Plant owner → Robot owner | [`0x17b6…af74`](https://agung-testnet.subscan.io/tx/0x17b635f3285a298fd84d38a6241d159a2c10a9a826e26719457e1d287072af74) |
-| Day 3 recharge, 22 kWh | 0.01 | Kepler-01 → BESS-2 | [`0xdca3…4532`](https://agung-testnet.subscan.io/tx/0xdca3482b425ae0fde841ef51ebc4fea35dcebbd0ed6aa7d7165ec05fae8d4532) |
-| Robot earnings into settlement | 0.0899 | Robot owner → Plant owner | [`0x20fe…de64`](https://agung-testnet.subscan.io/tx/0x20fe1db877919055c2712cde9f12099397c4cd449e4dd66b1c5868db075dde64) |
-| Settlement | 0.1498 | Plant owner → Residents | [`0x121c…de3d`](https://agung-testnet.subscan.io/tx/0x121c5380848c89ee9604f50a4c925dfabe2b7d0171d179572af86fa587a3de3d) |
 
 **Known gap.** Lumen's inspection should also be reported as a peaqOS activity event (`EVENT_TYPE_ACTIVITY`, self-reported trust). Simulating that call against EventRegistry `0x2DAD…0040` reverts with empty data, from both the operator and Lumen-04, so nothing was broadcast. The page shows this as "Not on chain yet" instead of inventing a hash.
 
@@ -104,13 +99,13 @@ The page also works as a static build with no server. It then shows the verified
 
 ### Sending new transactions (optional)
 
-With a funded Agung key, the yard server activates any missing machines (`activateMachine`, entry bond read from `MachineSubscription.requiredPeaqAmount(0)`, 0.4 PEAQ on Agung), tops Kepler-01 up to a 0.1 PEAQ float when it holds less than 0.05, and then sends each payment as a native transfer while the page plays. Copy `.env.example` to `.env`, which is git-ignored, and set `PEAQOS_PRIVATE_KEY` or `PEAQOS_PRIVATE_KEY_FILE`. Put the treasury private key only in the environment or in a file outside the repo. Child wallets for the machines and owners are derived from that key in memory.
+With a funded Agung key, the yard server activates any missing machines (`activateMachine`, entry bond read from `MachineSubscription.requiredPeaqAmount(0)`, 0.4 PEAQ on Agung) and then sends each payment as a native transfer while the page plays. Copy `.env.example` to `.env`, which is git-ignored, and set `PEAQOS_PRIVATE_KEY` or `PEAQOS_PRIVATE_KEY_FILE`. Put the treasury private key only in the environment or in a file outside the repo. Child wallets for the machines and owners are derived from that key in memory.
 
 The header then shows "Live writer". Every page load and every restart (R) is a new run that sends new transactions. Receipts never carry over from an earlier run. Without a key, the header shows "Replaying confirmed receipts".
 
-Agung tokens are free from the [peaq Gas Station](https://depinstation.peaq.xyz) (5 PEAQ per new wallet). The first start costs 1.6 PEAQ in bonds plus Kepler's float. After that, a run costs the operator about 0.05 PEAQ (the city keeps the rent) and Kepler 0.03 PEAQ in recharges. Most of the rest flows back through the settlement.
+Agung tokens are free from the [peaq Gas Station](https://depinstation.peaq.xyz) (5 PEAQ per new wallet). The first start costs 1.6 PEAQ in bonds. Each run needs 0.18 PEAQ in the Drain and returns it at the end, so a run only costs gas. A run that is cut short leaves its money in the city or owner wallets, and the next completed run sweeps it back.
 
-Every visitor's page load starts its own run, so on a public URL either leave the key out (replay mode) or expect each visit to spend from the operator wallet.
+Every visitor's page load starts its own run, and runs share the same wallets, so keep one page open at a time. On a public URL, leave the key out (replay mode).
 
 ## Screenshots
 
