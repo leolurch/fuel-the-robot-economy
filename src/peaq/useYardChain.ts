@@ -1,11 +1,33 @@
 import { useEffect, useRef, useState } from "react";
 import type { Engine } from "../economy/engine.ts";
 import type { ChainJob, IdentityBook, PersonId } from "../economy/types.ts";
+import { AGUNG_DEPLOYMENT } from "./deployment.ts";
 import { KNOWN_RECEIPTS } from "./landed.ts";
 import type { SettleResult, YardStatus } from "./yardTypes.ts";
 
 /** Scopes server-side receipts to this page load so a reload sends fresh transfers instead of reusing old ones. */
 export const SESSION = Math.random().toString(36).slice(2, 10);
+
+/** Static hosts (Vercel, any CDN) have no /api. Machines and people fall back to the known Agung identities. */
+const STATIC_REPLAY: YardStatus = {
+  chainId: AGUNG_DEPLOYMENT.chainId,
+  deploymentId: AGUNG_DEPLOYMENT.deploymentId,
+  operator: null,
+  operatorBalance: "0",
+  bondPeaq: "1",
+  blocker: "Static build without the yard server. The page replays the confirmed Agung run.",
+  readOnly: true,
+  writesLanded: true,
+  machines: [],
+  people: [],
+  transfers: [],
+};
+
+let serverMissing = false;
+
+export function hasYardServer(): boolean {
+  return !serverMissing;
+}
 
 export function useYardChain(engine: Engine, run: string): YardStatus | null {
   const [status, setStatus] = useState<YardStatus | null>(null);
@@ -14,8 +36,18 @@ export function useYardChain(engine: Engine, run: string): YardStatus | null {
   useEffect(() => {
     let cancel = false;
     const pull = async () => {
+      if (serverMissing) {
+        setStatus(STATIC_REPLAY);
+        return;
+      }
       try {
         const response = await fetch("/api/peaq");
+        const json = response.headers.get("content-type")?.includes("application/json") ?? false;
+        if (response.status === 404 || response.status === 405 || (response.ok && !json)) {
+          serverMissing = true;
+          if (!cancel) setStatus(STATIC_REPLAY);
+          return;
+        }
         if (!response.ok) return;
         const body = (await response.json()) as YardStatus;
         if (cancel) return;
@@ -72,6 +104,7 @@ export function useYardChain(engine: Engine, run: string): YardStatus | null {
 
 export async function settleJob(job: ChainJob, run: string): Promise<SettleResult> {
   try {
+    if (serverMissing) throw new Error("no yard server on this host");
     const response = await fetch("/api/peaq/settle", {
       method: "POST",
       headers: { "content-type": "application/json" },

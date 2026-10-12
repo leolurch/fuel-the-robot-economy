@@ -5,6 +5,7 @@ import * as THREE from "three";
 import type { Engine } from "../economy/engine.ts";
 import { PHASES } from "../economy/model.ts";
 import { FIELD_X, FIELD_Z } from "../world/layout.ts";
+import { hasYardServer } from "../peaq/useYardChain.ts";
 import { frameMeter, noteFrame } from "./frameMeter.ts";
 import { Ground } from "./Ground.tsx";
 import {
@@ -56,6 +57,7 @@ function AdaptiveDpr() {
     adjusted.current = true;
     const calls = gl.info.render.calls;
     if (frameMeter.fps >= 28) {
+      if (!hasYardServer()) return;
       void fetch("/api/client-log", {
         method: "POST",
         body: `adapt-skip ${frameMeter.fps.toFixed(2)} calls=${calls}`,
@@ -70,6 +72,7 @@ function AdaptiveDpr() {
       frameMeter.startedAt = 0;
       frameMeter.fps = 0;
     }, 0);
+    if (!hasYardServer()) return;
     void fetch("/api/client-log", {
       method: "POST",
       body: `adapt-dpr ${next.toFixed(3)} from ${fps.toFixed(2)} calls=${calls}`,
